@@ -7,9 +7,11 @@ import 'package:uuid/uuid.dart';
 import 'package:logger/logger.dart';
 import '../core/constants/app_constants.dart';
 import '../models/audio_chunk.dart';
+import 'native_audio_recorder.dart';
 
 class AudioRecordingService {
   final AudioRecorder _recorder = AudioRecorder();
+  final NativeAudioRecorder _nativeRecorder = NativeAudioRecorder();
   final Logger _logger = Logger();
   final _uuid = const Uuid();
 
@@ -56,15 +58,26 @@ class AudioRecordingService {
       _recordingPath = '${appDir.path}/recordings/$sessionId';
       await Directory(_recordingPath!).create(recursive: true);
 
-      // Start recording
-      await _recorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.wav,
-          sampleRate: AppConstants.audioSampleRate,
-          bitRate: AppConstants.audioBitRate,
-        ),
-        path: '$_recordingPath/chunk_0.wav',
-      );
+      // Use native recorder on iOS for better background support
+      if (Platform.isIOS) {
+        await _nativeRecorder.startRecording(
+          '$_recordingPath/chunk_0.wav',
+          AppConstants.audioSampleRate,
+        );
+      } else {
+        // Start recording with audio config for Android
+        await _recorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.wav,
+            sampleRate: AppConstants.audioSampleRate,
+            bitRate: AppConstants.audioBitRate,
+            autoGain: true,
+            echoCancel: true,
+            noiseSuppress: true,
+          ),
+          path: '$_recordingPath/chunk_0.wav',
+        );
+      }
 
       _isRecording = true;
       _startChunkTimer();
@@ -92,8 +105,14 @@ class AudioRecordingService {
         return;
       }
 
-      final amplitude = await _recorder.getAmplitude();
-      _amplitudeController.add(amplitude.current);
+      // Only get amplitude on Android (iOS native recorder doesn't support this)
+      if (Platform.isAndroid) {
+        final amplitude = await _recorder.getAmplitude();
+        _amplitudeController.add(amplitude.current);
+      } else {
+        // Send a dummy value for iOS
+        _amplitudeController.add(0.5);
+      }
     });
   }
 
@@ -101,8 +120,28 @@ class AudioRecordingService {
     try {
       if (!_isRecording || _currentSessionId == null) return;
 
-      // Stop current recording
-      final currentPath = await _recorder.stop();
+      String? currentPath;
+
+      // Handle platform-specific chunking
+      if (Platform.isIOS) {
+        // Check if recording is actually active before stopping
+        final isActuallyRecording = await _nativeRecorder.isRecording();
+        if (!isActuallyRecording) {
+          _logger.w('Recording stopped unexpectedly, restarting...');
+          // Restart recording from current sequence
+          await _nativeRecorder.startRecording(
+            '$_recordingPath/chunk_$_sequenceNumber.wav',
+            AppConstants.audioSampleRate,
+          );
+          return;
+        }
+
+        // On iOS, stop current recording to finalize the chunk
+        currentPath = await _nativeRecorder.stopRecording();
+      } else {
+        // On Android, stop current recording
+        currentPath = await _recorder.stop();
+      }
 
       if (currentPath != null) {
         final file = File(currentPath);
@@ -125,25 +164,52 @@ class AudioRecordingService {
         }
       }
 
-      // Start recording next chunk
+      // Start recording next chunk immediately
       _sequenceNumber++;
-      await _recorder.start(
-        const RecordConfig(
-          encoder: AudioEncoder.wav,
-          sampleRate: AppConstants.audioSampleRate,
-          bitRate: AppConstants.audioBitRate,
-        ),
-        path: '$_recordingPath/chunk_$_sequenceNumber.wav',
-      );
+      if (Platform.isIOS) {
+        // On iOS, start a new recording for the next chunk
+        await _nativeRecorder.startRecording(
+          '$_recordingPath/chunk_$_sequenceNumber.wav',
+          AppConstants.audioSampleRate,
+        );
+      } else {
+        await _recorder.start(
+          const RecordConfig(
+            encoder: AudioEncoder.wav,
+            sampleRate: AppConstants.audioSampleRate,
+            bitRate: AppConstants.audioBitRate,
+            autoGain: true,
+            echoCancel: true,
+            noiseSuppress: true,
+          ),
+          path: '$_recordingPath/chunk_$_sequenceNumber.wav',
+        );
+      }
     } catch (e) {
       _logger.e('Error creating chunk: $e');
+      // Try to restart recording if it failed
+      if (Platform.isIOS && _isRecording) {
+        try {
+          _logger.i('Attempting to restart recording after error...');
+          await _nativeRecorder.startRecording(
+            '$_recordingPath/chunk_$_sequenceNumber.wav',
+            AppConstants.audioSampleRate,
+          );
+        } catch (restartError) {
+          _logger.e('Failed to restart recording: $restartError');
+        }
+      }
     }
   }
 
   Future<void> pauseRecording() async {
     try {
       if (_isRecording) {
-        await _recorder.pause();
+        if (Platform.isIOS) {
+          await _nativeRecorder.pauseRecording();
+        } else {
+          await _recorder.pause();
+        }
         _chunkTimer?.cancel();
         _isRecording = false;
         _logger.i('Recording paused');
@@ -156,7 +222,11 @@ class AudioRecordingService {
   Future<void> resumeRecording() async {
     try {
       if (!_isRecording) {
-        await _recorder.resume();
+        if (Platform.isIOS) {
+          await _nativeRecorder.resumeRecording();
+        } else {
+          await _recorder.resume();
+        }
         _isRecording = true;
         _startChunkTimer();
         _logger.i('Recording resumed');
@@ -172,7 +242,9 @@ class AudioRecordingService {
       _isRecording = false;
 
       // Create final chunk
-      final finalPath = await _recorder.stop();
+      final finalPath = Platform.isIOS
+          ? await _nativeRecorder.stopRecording()
+          : await _recorder.stop();
 
       if (finalPath != null && _currentSessionId != null) {
         final file = File(finalPath);

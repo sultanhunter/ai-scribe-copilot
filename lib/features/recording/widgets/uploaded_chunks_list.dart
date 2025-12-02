@@ -276,16 +276,45 @@ class _UploadedChunkTileState extends State<UploadedChunkTile> {
 
   Future<void> _togglePlayPause() async {
     if (widget.chunk['signedUrl'] == null) {
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Audio URL not available')));
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Audio URL not available')),
+        );
+      }
       return;
     }
 
-    if (_isPlaying) {
-      await _audioPlayer.pause();
-    } else {
-      await _audioPlayer.play(UrlSource(widget.chunk['signedUrl']));
+    try {
+      if (_isPlaying) {
+        await _audioPlayer.pause();
+      } else {
+        // Log the URL for debugging
+        print('🎵 Attempting to play audio from: ${widget.chunk['signedUrl']}');
+
+        // Set audio context for iOS - using playback category without defaultToSpeaker
+        await _audioPlayer.setAudioContext(
+          AudioContext(
+            iOS: AudioContextIOS(
+              category: AVAudioSessionCategory.playback,
+              options: {AVAudioSessionOptions.mixWithOthers},
+            ),
+            android: AudioContextAndroid(
+              isSpeakerphoneOn: true,
+              audioMode: AndroidAudioMode.normal,
+            ),
+          ),
+        );
+
+        await _audioPlayer.play(UrlSource(widget.chunk['signedUrl']));
+        print('✅ Audio playback started');
+      }
+    } catch (e) {
+      print('❌ Error playing audio: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Error playing audio: $e')));
+      }
     }
   }
 
