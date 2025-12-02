@@ -4,12 +4,30 @@ import 'package:flutter_localizations/flutter_localizations.dart';
 import 'core/theme/app_theme.dart';
 import 'core/localization/app_localizations.dart';
 import 'providers/app_providers.dart';
+import 'providers/service_providers.dart';
 import 'features/patients/patients_screen.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  runApp(const ProviderScope(child: MyApp()));
+  // Initialize services
+  final container = ProviderContainer();
+  try {
+    // Initialize chunk storage service (Hive)
+    final storageService = container.read(chunkStorageServiceProvider);
+    await storageService.init();
+
+    // Resume any pending uploads from previous session
+    final uploadService = container.read(chunkUploadServiceProvider);
+    uploadService.startQueueProcessing(); // Start background processing
+    await uploadService.resumePendingUploads();
+
+    debugPrint('✅ Services initialized successfully');
+  } catch (e) {
+    debugPrint('❌ Error initializing services: $e');
+  }
+
+  runApp(UncontrolledProviderScope(container: container, child: const MyApp()));
 }
 
 class MyApp extends ConsumerWidget {

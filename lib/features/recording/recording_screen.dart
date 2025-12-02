@@ -5,6 +5,7 @@ import '../../providers/patient_providers.dart';
 import '../../providers/recording_providers.dart';
 import '../../providers/service_providers.dart';
 import '../../providers/app_providers.dart';
+import 'widgets/chunk_status_list.dart';
 
 class RecordingScreen extends ConsumerWidget {
   const RecordingScreen({super.key});
@@ -26,15 +27,17 @@ class RecordingScreen extends ConsumerWidget {
       appBar: AppBar(title: Text(patient.name)),
       body: Column(
         children: [
-          Expanded(
+          // Recording Controls
+          SizedBox(
+            height: 300,
             child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   // Audio level visualization
                   Container(
-                    width: 200,
-                    height: 200,
+                    width: 150,
+                    height: 150,
                     decoration: BoxDecoration(
                       shape: BoxShape.circle,
                       color:
@@ -61,27 +64,27 @@ class RecordingScreen extends ConsumerWidget {
                                     !recordingState.isPaused
                                 ? Icons.mic
                                 : Icons.mic_off,
-                            size: 64,
+                            size: 48,
                             color:
                                 recordingState.isRecording &&
                                     !recordingState.isPaused
                                 ? Theme.of(context).colorScheme.primary
                                 : Colors.grey,
                           ),
-                          const SizedBox(height: 16),
+                          const SizedBox(height: 12),
                           Text(
                             _formatDuration(recordingState.duration),
-                            style: Theme.of(context).textTheme.headlineMedium,
+                            style: Theme.of(context).textTheme.headlineSmall,
                           ),
                         ],
                       ),
                     ),
                   ),
-                  const SizedBox(height: 32),
+                  const SizedBox(height: 24),
                   if (recordingState.isRecording) ...[
                     // Audio level indicator
                     Container(
-                      width: 200,
+                      width: 150,
                       height: 8,
                       decoration: BoxDecoration(
                         color: Colors.grey.withOpacity(0.3),
@@ -100,19 +103,6 @@ class RecordingScreen extends ConsumerWidget {
                           ),
                         ),
                       ),
-                    ),
-                    const SizedBox(height: 16),
-                    Text(
-                      '${loc.translate('uploadedChunks')}: ${recordingState.uploadedChunks}/${recordingState.totalChunks}',
-                      style: Theme.of(context).textTheme.bodyLarge,
-                    ),
-                    Text(
-                      '${loc.translate('chunksFailed')}: ${recordingState.failedChunks}',
-                      style: Theme.of(context).textTheme.bodyMedium,
-                    ),
-                    Text(
-                      '${loc.translate('queueSize')}: ${recordingState.uploadQueueSize}',
-                      style: Theme.of(context).textTheme.bodyMedium,
                     ),
                   ],
                   if (recordingState.error != null) ...[
@@ -136,6 +126,9 @@ class RecordingScreen extends ConsumerWidget {
               ),
             ),
           ),
+          // Chunk Status List
+          if (recordingState.isRecording)
+            const Expanded(child: ChunkStatusList()),
           // Control buttons
           Container(
             padding: const EdgeInsets.all(24),

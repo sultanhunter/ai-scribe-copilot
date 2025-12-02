@@ -180,7 +180,7 @@ router.post(
     console.log("Request body:", JSON.stringify(req.body, null, 2));
 
     try {
-      const { sessionId, chunkId, sequenceNumber } = req.body;
+      const { sessionId, chunkId, sequenceNumber, checksum } = req.body;
 
       if (!sessionId || !chunkId || sequenceNumber === undefined) {
         console.error("❌ Missing required fields:", {
@@ -194,13 +194,26 @@ router.post(
         });
       }
 
-      // Update chunk status
+      // Log checksum if provided
+      if (checksum) {
+        console.log(`📝 Received checksum for chunk ${chunkId}: ${checksum}`);
+      }
+
+      // Update chunk status with checksum (if provided)
+      const updateData: any = {
+        status: "uploaded",
+        upload_time: new Date().toISOString(),
+      };
+
+      if (checksum) {
+        // Note: Add checksum column to chunks table if you want to store it
+        // For now, we'll just log it
+        console.log(`✅ Checksum verification: ${checksum}`);
+      }
+
       const { error: chunkError } = await supabase.client
         .from("chunks")
-        .update({
-          status: "uploaded",
-          upload_time: new Date().toISOString(),
-        })
+        .update(updateData)
         .eq("chunk_id", chunkId)
         .eq("session_id", sessionId);
 

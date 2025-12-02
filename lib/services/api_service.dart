@@ -133,6 +133,7 @@ class ApiService {
     required String sessionId,
     required String chunkId,
     required int sequenceNumber,
+    String? checksum,
   }) async {
     try {
       await _dio.post(
@@ -141,6 +142,7 @@ class ApiService {
           'sessionId': sessionId,
           'chunkId': chunkId,
           'sequenceNumber': sequenceNumber,
+          if (checksum != null) 'checksum': checksum,
         },
       );
     } catch (e) {
