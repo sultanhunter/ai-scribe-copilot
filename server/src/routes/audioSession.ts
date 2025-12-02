@@ -180,7 +180,8 @@ router.post(
     console.log("Request body:", JSON.stringify(req.body, null, 2));
 
     try {
-      const { sessionId, chunkId, sequenceNumber, checksum } = req.body;
+      const { sessionId, chunkId, sequenceNumber, checksum, fileSize } =
+        req.body;
 
       if (!sessionId || !chunkId || sequenceNumber === undefined) {
         console.error("❌ Missing required fields:", {
@@ -199,11 +200,22 @@ router.post(
         console.log(`📝 Received checksum for chunk ${chunkId}: ${checksum}`);
       }
 
-      // Update chunk status with checksum (if provided)
+      // Construct storage path
+      const storagePath = `${sessionId}/chunk_${String(sequenceNumber).padStart(
+        4,
+        "0"
+      )}_${chunkId}.wav`;
+
+      // Update chunk status with storage_path, file_size, and checksum (if provided)
       const updateData: any = {
         status: "uploaded",
         upload_time: new Date().toISOString(),
+        storage_path: storagePath,
       };
+
+      if (fileSize) {
+        updateData.file_size = fileSize;
+      }
 
       if (checksum) {
         // Note: Add checksum column to chunks table if you want to store it
@@ -254,6 +266,10 @@ router.post(
       console.log(
         `✅ Chunk ${sequenceNumber} uploaded for session ${sessionId} (${uploadedCount}/${count})`
       );
+      console.log(`📁 Storage path: ${storagePath}`);
+      if (fileSize) {
+        console.log(`📦 File size: ${fileSize} bytes`);
+      }
 
       res.json({
         success: true,
@@ -413,5 +429,142 @@ router.get("/v1/session/:sessionId", async (req: Request, res: Response) => {
     });
   }
 });
+
+/**
+ * GET /v1/fetch-session-by-patient/:patientId
+ * Get all sessions for a specific patient
+ */
+router.get(
+  "/v1/fetch-session-by-patient/:patientId",
+  async (req: Request, res: Response) => {
+    console.log(
+      "\n📥 [GET /v1/fetch-session-by-patient/:patientId] Received request"
+    );
+
+    try {
+      const { patientId } = req.params;
+      console.log("Patient ID:", patientId);
+
+      // Get all sessions for this patient
+      const { data: sessions, error: sessionsError } = await supabase.client
+        .from("sessions")
+        .select("*")
+        .eq("patient_id", patientId)
+        .order("start_time", { ascending: false });
+
+      if (sessionsError) {
+        console.error("❌ Error fetching sessions:", sessionsError);
+        return res.status(500).json({
+          error: "Failed to fetch sessions",
+          message: sessionsError.message,
+        });
+      }
+
+      console.log(
+        `✅ Retrieved ${
+          sessions?.length || 0
+        } sessions for patient ${patientId}`
+      );
+
+      // Transform to match Flutter model format
+      const formattedSessions = (sessions || []).map((session) => ({
+        sessionId: session.session_id,
+        patientId: session.patient_id,
+        userId: session.user_id,
+        startTime: session.start_time,
+        endTime: session.end_time,
+        status: session.status,
+        totalChunks: session.total_chunks,
+        uploadedChunks: session.uploaded_chunks,
+      }));
+
+      res.json({
+        sessions: formattedSessions,
+      });
+    } catch (error: any) {
+      console.error("Error fetching patient sessions:", error);
+      res.status(500).json({
+        error: "Failed to fetch patient sessions",
+        message: error.message,
+      });
+    }
+  }
+);
+
+/**
+ * GET /v1/session/:sessionId/uploaded-chunks
+ * Get all uploaded chunks for a session with signed URLs
+ */
+router.get(
+  "/v1/session/:sessionId/uploaded-chunks",
+  async (req: Request, res: Response) => {
+    console.log(
+      "\n📥 [GET /v1/session/:sessionId/uploaded-chunks] Received request"
+    );
+
+    try {
+      const { sessionId } = req.params;
+      console.log("Session ID:", sessionId);
+
+      // Get uploaded chunks
+      const { data: chunks, error: chunksError } = await supabase.client
+        .from("chunks")
+        .select("*")
+        .eq("session_id", sessionId)
+        .eq("status", "uploaded")
+        .order("sequence_number");
+
+      if (chunksError) {
+        console.error("❌ Error fetching chunks:", chunksError);
+        return res.status(500).json({
+          error: "Failed to fetch chunks",
+          message: chunksError.message,
+        });
+      }
+
+      // Generate signed URLs for each chunk
+      const chunksWithUrls = await Promise.all(
+        (chunks || []).map(async (chunk) => {
+          if (!chunk.storage_path) {
+            return { ...chunk, signedUrl: null };
+          }
+
+          const { data, error } = await supabase.client.storage
+            .from(AUDIO_BUCKET)
+            .createSignedUrl(chunk.storage_path, 3600); // 1 hour expiry
+
+          if (error) {
+            console.error(
+              `❌ Error generating signed URL for chunk ${chunk.chunk_id}:`,
+              error
+            );
+            return { ...chunk, signedUrl: null };
+          }
+
+          return {
+            chunkId: chunk.chunk_id,
+            sequenceNumber: chunk.sequence_number,
+            uploadTime: chunk.upload_time,
+            fileSize: chunk.file_size,
+            signedUrl: data.signedUrl,
+          };
+        })
+      );
+
+      console.log(`✅ Retrieved ${chunksWithUrls.length} uploaded chunks`);
+
+      res.json({
+        sessionId,
+        chunks: chunksWithUrls,
+      });
+    } catch (error: any) {
+      console.error("Error fetching uploaded chunks:", error);
+      res.status(500).json({
+        error: "Failed to fetch uploaded chunks",
+        message: error.message,
+      });
+    }
+  }
+);
 
 export default router;

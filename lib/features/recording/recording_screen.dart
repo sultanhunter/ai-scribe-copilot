@@ -6,12 +6,39 @@ import '../../providers/recording_providers.dart';
 import '../../providers/service_providers.dart';
 import '../../providers/app_providers.dart';
 import 'widgets/chunk_status_list.dart';
+import 'widgets/uploaded_chunks_list.dart';
 
-class RecordingScreen extends ConsumerWidget {
-  const RecordingScreen({super.key});
+class RecordingScreen extends ConsumerStatefulWidget {
+  final String? existingSessionId;
+
+  const RecordingScreen({super.key, this.existingSessionId});
 
   @override
-  Widget build(BuildContext context, WidgetRef ref) {
+  ConsumerState<RecordingScreen> createState() => _RecordingScreenState();
+}
+
+class _RecordingScreenState extends ConsumerState<RecordingScreen> {
+  @override
+  void initState() {
+    super.initState();
+    // If viewing an existing session, load it
+    if (widget.existingSessionId != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(recordingSessionProvider.notifier).reset();
+        ref
+            .read(recordingSessionProvider.notifier)
+            .loadExistingSession(widget.existingSessionId!);
+      });
+    } else {
+      // Reset the session state for a new recording
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        ref.read(recordingSessionProvider.notifier).reset();
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
     final loc = AppLocalizations.of(context);
     final patient = ref.watch(selectedPatientProvider);
     final recordingState = ref.watch(recordingSessionProvider);
@@ -126,9 +153,13 @@ class RecordingScreen extends ConsumerWidget {
               ),
             ),
           ),
-          // Chunk Status List
+          // Chunk Status List (shown while recording)
           if (recordingState.isRecording)
-            const Expanded(child: ChunkStatusList()),
+            const Expanded(child: ChunkStatusList())
+          // Uploaded Chunks List (shown when not recording or viewing existing session)
+          else if (recordingState.session != null ||
+              widget.existingSessionId != null)
+            const Expanded(child: UploadedChunksList()),
           // Control buttons
           Container(
             padding: const EdgeInsets.all(24),

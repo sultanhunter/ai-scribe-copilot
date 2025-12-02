@@ -6,6 +6,7 @@ import '../../models/patient.dart';
 import '../../providers/patient_providers.dart';
 import '../../providers/service_providers.dart';
 import '../../providers/app_providers.dart';
+import 'patient_detail_screen.dart';
 import '../recording/recording_screen.dart';
 import '../settings/settings_screen.dart';
 
@@ -72,11 +73,11 @@ class PatientsScreen extends ConsumerWidget {
                   ),
                   trailing: const Icon(Icons.chevron_right),
                   onTap: () {
-                    ref.read(selectedPatientProvider.notifier).select(patient);
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const RecordingScreen(),
+                        builder: (context) =>
+                            PatientDetailScreen(patient: patient),
                       ),
                     );
                   },

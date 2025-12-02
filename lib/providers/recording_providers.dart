@@ -164,6 +164,41 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
     _logger.i('All uploads completed');
   }
 
+  Future<void> loadExistingSession(String sessionId) async {
+    try {
+      _logger.i('Loading existing session: $sessionId');
+
+      final apiService = ref.read(apiServiceProvider);
+      final sessionData = await apiService.getSessionDetails(sessionId);
+
+      final session = RecordingSession(
+        sessionId: sessionData['sessionId'],
+        patientId: sessionData['patientId'],
+        userId: sessionData['userId'],
+        startTime: DateTime.parse(sessionData['startTime']),
+        endTime: sessionData['endTime'] != null
+            ? DateTime.parse(sessionData['endTime'])
+            : null,
+        status: sessionData['status'],
+        totalChunks: sessionData['totalChunks'] ?? 0,
+        uploadedChunks: sessionData['uploadedChunks'] ?? 0,
+      );
+
+      state = state.copyWith(
+        session: session,
+        isRecording: false,
+        isPaused: false,
+        totalChunks: session.totalChunks,
+        uploadedChunks: session.uploadedChunks,
+      );
+
+      _logger.i('Session loaded successfully');
+    } catch (e) {
+      _logger.e('Error loading session: $e');
+      state = state.copyWith(error: 'Failed to load session: $e');
+    }
+  }
+
   void reset() {
     _chunkSubscription?.cancel();
     _amplitudeSubscription?.cancel();

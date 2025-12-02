@@ -134,6 +134,7 @@ class ApiService {
     required String chunkId,
     required int sequenceNumber,
     String? checksum,
+    int? fileSize,
   }) async {
     try {
       await _dio.post(
@@ -143,6 +144,7 @@ class ApiService {
           'chunkId': chunkId,
           'sequenceNumber': sequenceNumber,
           if (checksum != null) 'checksum': checksum,
+          if (fileSize != null) 'fileSize': fileSize,
         },
       );
     } catch (e) {
@@ -165,6 +167,35 @@ class ApiService {
       return [];
     } catch (e) {
       _logger.e('Error fetching sessions: $e');
+      rethrow;
+    }
+  }
+
+  Future<Map<String, dynamic>> getSessionDetails(String sessionId) async {
+    try {
+      final response = await _dio.get(
+        '/${AppConstants.apiVersion}/session/$sessionId',
+      );
+
+      return response.data;
+    } catch (e) {
+      _logger.e('Error fetching session details: $e');
+      rethrow;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getUploadedChunks(String sessionId) async {
+    try {
+      final response = await _dio.get(
+        '/${AppConstants.apiVersion}/session/$sessionId/uploaded-chunks',
+      );
+
+      if (response.data['chunks'] != null) {
+        return List<Map<String, dynamic>>.from(response.data['chunks']);
+      }
+      return [];
+    } catch (e) {
+      _logger.e('Error fetching uploaded chunks: $e');
       rethrow;
     }
   }

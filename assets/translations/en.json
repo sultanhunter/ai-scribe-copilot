@@ -50,5 +50,10 @@
   "chunksFailed": "Chunks Failed",
   "queueSize": "Queue Size",
   "selectPatient": "Select a patient to start recording",
-  "recordingInProgress": "Recording in progress"
+  "recordingInProgress": "Recording in progress",
+  "recordingSessions": "Recording Sessions",
+  "status": "Status",
+  "chunks": "Chunks",
+  "noSessionData": "No session data available",
+  "noRecordings": "No recordings found"
 }

@@ -206,12 +206,13 @@ class ChunkUploadService {
     // Step 3: Upload to presigned URL
     await _apiService.uploadChunk(presignedUrl, fileBytes);
 
-    // Step 4: Notify backend with checksum
+    // Step 4: Notify backend with checksum and file size
     await _apiService.notifyChunkUploaded(
       sessionId: chunk.sessionId,
       chunkId: chunk.chunkId,
       sequenceNumber: chunk.sequenceNumber,
       checksum: chunk.checksum,
+      fileSize: chunk.fileSize,
     );
 
     _logger.i('Successfully uploaded chunk: ${chunk.chunkId}');
