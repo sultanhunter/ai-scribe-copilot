@@ -89,12 +89,27 @@ class ChunkUploadService {
             continue;
           }
 
-          // Verify file integrity before upload
+          // Check if chunk already exists on server before verifying local file
+          final alreadyUploaded = await _checkIfChunkExistsOnServer(chunk);
+          if (alreadyUploaded) {
+            _logger.i(
+              'Chunk ${chunk.chunkId} already exists on server, marking as uploaded',
+            );
+            await _storageService.updateChunkState(
+              chunk.chunkId,
+              ChunkUploadState.uploaded,
+            );
+            _emitProgress(chunk, UploadStatus.success);
+            continue;
+          }
+
+          // Verify file integrity before upload (only if not already on server)
           if (!await _storageService.verifyChunkIntegrity(chunk.chunkId)) {
             await _storageService.updateChunkState(
               chunk.chunkId,
               ChunkUploadState.failed,
-              errorMessage: 'File integrity check failed',
+              errorMessage:
+                  'File integrity check failed - local file missing or corrupted',
             );
             _emitProgress(
               chunk,
@@ -175,6 +190,28 @@ class ChunkUploadService {
     );
   }
 
+  /// Check if chunk already exists on server
+  Future<bool> _checkIfChunkExistsOnServer(AudioChunk chunk) async {
+    try {
+      final uploadedChunks = await _apiService.getUploadedChunks(
+        chunk.sessionId,
+      );
+
+      // Check if this chunk ID is in the uploaded chunks list
+      final exists = uploadedChunks.any((c) => c['chunkId'] == chunk.chunkId);
+
+      if (exists) {
+        _logger.i('Chunk ${chunk.chunkId} found on server');
+      }
+
+      return exists;
+    } catch (e) {
+      _logger.e('Error checking if chunk exists on server: $e');
+      // If we can't check, assume it doesn't exist and try to upload
+      return false;
+    }
+  }
+
   Future<void> _uploadSingleChunk(AudioChunk chunk) async {
     _logger.i(
       'Uploading chunk: ${chunk.chunkId}, sequence: ${chunk.sequenceNumber}',
@@ -230,11 +267,35 @@ class ChunkUploadService {
 
   /// Resume uploads for all pending chunks
   Future<void> resumePendingUploads() async {
+    // First, reset any chunks stuck in "uploading" state (orphaned by app crash/close)
+    await _resetOrphanedUploadingChunks();
+
     final pending = _storageService.getPendingChunks();
     _logger.i('Resuming ${pending.length} pending uploads');
 
     if (pending.isNotEmpty) {
       await _processQueue();
+    }
+  }
+
+  /// Reset chunks stuck in "uploading" state back to "recorded" for retry
+  Future<void> _resetOrphanedUploadingChunks() async {
+    final uploadingChunks = _storageService.getChunksByState(
+      ChunkUploadState.uploading,
+    );
+
+    if (uploadingChunks.isNotEmpty) {
+      _logger.i(
+        'Found ${uploadingChunks.length} orphaned uploading chunks, resetting...',
+      );
+
+      for (final chunk in uploadingChunks) {
+        await _storageService.updateChunkState(
+          chunk.chunkId,
+          ChunkUploadState.recorded,
+          errorMessage: 'Upload interrupted, retrying...',
+        );
+      }
     }
   }
 
