@@ -49,49 +49,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
         isPaused: false,
       );
 
-      // Start audio recording
-      final audioService = ref.read(audioRecordingServiceProvider);
-      await audioService.startRecording(sessionId);
-
-      // Listen to audio chunks and upload them
-      final uploadService = ref.read(chunkUploadServiceProvider);
-      _chunkSubscription = audioService.chunkStream.listen(
-        (chunk) {
-          _logger.i('Received chunk: ${chunk.sequenceNumber}');
-          state = state.copyWith(totalChunks: state.totalChunks + 1);
-          uploadService.uploadChunk(chunk);
-        },
-        onError: (error) {
-          _logger.e('Chunk stream error: $error');
-          state = state.copyWith(error: error.toString());
-        },
-      );
-
-      // Listen to amplitude for visualization
-      _amplitudeSubscription = audioService.amplitudeStream.listen((amplitude) {
-        state = state.copyWith(currentAmplitude: amplitude);
-      });
-
-      // Listen to upload progress
-      _uploadProgressSubscription = uploadService.progressStream.listen((
-        progress,
-      ) {
-        _logger.i(
-          'Upload progress - Chunk: ${progress.sequenceNumber}, '
-          'Status: ${progress.status}, Queue: ${progress.queueSize}',
-        );
-
-        if (progress.status == UploadStatus.success) {
-          state = state.copyWith(uploadedChunks: state.uploadedChunks + 1);
-        } else if (progress.status == UploadStatus.failed) {
-          state = state.copyWith(failedChunks: state.failedChunks + 1);
-        }
-
-        state = state.copyWith(
-          uploadQueueSize: progress.queueSize,
-          lastUploadStatus: progress.status,
-        );
-      });
+      await _startAudioRecording(sessionId, startingSequenceNumber: 0);
 
       _logger.i('Recording started successfully');
     } catch (e) {
@@ -99,6 +57,85 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       state = state.copyWith(error: e.toString(), isRecording: false);
       rethrow;
     }
+  }
+
+  Future<void> resumeRecordingSession() async {
+    try {
+      if (state.session == null) {
+        throw Exception('No session to resume');
+      }
+
+      _logger.i('Resuming recording for session: ${state.session!.sessionId}');
+
+      state = state.copyWith(isRecording: true, isPaused: false);
+
+      // Start from the next sequence number after the last chunk
+      final startingSequence = state.session!.totalChunks;
+      _logger.i('Resuming from sequence number: $startingSequence');
+
+      await _startAudioRecording(
+        state.session!.sessionId,
+        startingSequenceNumber: startingSequence,
+      );
+
+      _logger.i('Recording resumed successfully');
+    } catch (e) {
+      _logger.e('Error resuming recording: $e');
+      state = state.copyWith(error: e.toString(), isRecording: false);
+      rethrow;
+    }
+  }
+
+  Future<void> _startAudioRecording(
+    String sessionId, {
+    int startingSequenceNumber = 0,
+  }) async {
+    // Start audio recording
+    final audioService = ref.read(audioRecordingServiceProvider);
+    await audioService.startRecording(
+      sessionId,
+      startingSequenceNumber: startingSequenceNumber,
+    );
+
+    // Listen to audio chunks and upload them
+    final uploadService = ref.read(chunkUploadServiceProvider);
+    _chunkSubscription = audioService.chunkStream.listen(
+      (chunk) {
+        _logger.i('Received chunk: ${chunk.sequenceNumber}');
+        state = state.copyWith(totalChunks: state.totalChunks + 1);
+        uploadService.uploadChunk(chunk);
+      },
+      onError: (error) {
+        _logger.e('Chunk stream error: $error');
+        state = state.copyWith(error: error.toString());
+      },
+    );
+
+    // Listen to amplitude for visualization
+    _amplitudeSubscription = audioService.amplitudeStream.listen((amplitude) {
+      state = state.copyWith(currentAmplitude: amplitude);
+    });
+
+    // Listen to upload progress
+    _uploadProgressSubscription = uploadService.progressStream.listen((
+      progress,
+    ) {
+      _logger.i(
+        'Upload progress - Chunk: ${progress.sequenceNumber}, '
+        'Status: ${progress.status}, Queue: ${progress.queueSize}',
+      );
+
+      if (progress.status == UploadStatus.success) {
+        state = state.copyWith(uploadedChunks: state.uploadedChunks + 1);
+      } else if (progress.status == UploadStatus.failed) {
+        state = state.copyWith(failedChunks: state.failedChunks + 1);
+      }
+
+      state = state.copyWith(
+        uploadQueueSize: progress.queueSize,
+        lastUploadStatus: progress.status,
+      );
+    });
   }
 
   Future<void> pauseRecording() async {

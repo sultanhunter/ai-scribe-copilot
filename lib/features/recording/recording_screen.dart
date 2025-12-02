@@ -6,7 +6,7 @@ import '../../providers/recording_providers.dart';
 import '../../providers/service_providers.dart';
 import '../../providers/app_providers.dart';
 import 'widgets/chunk_status_list.dart';
-import 'widgets/uploaded_chunks_list.dart';
+import 'uploaded_chunks_viewer_screen.dart';
 
 class RecordingScreen extends ConsumerStatefulWidget {
   final String? existingSessionId;
@@ -56,7 +56,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         children: [
           // Recording Controls
           SizedBox(
-            height: 300,
+            height: 200,
             child: Center(
               child: Column(
                 mainAxisAlignment: MainAxisAlignment.center,
@@ -153,13 +153,42 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
               ),
             ),
           ),
-          // Chunk Status List (shown while recording)
-          if (recordingState.isRecording)
-            const Expanded(child: ChunkStatusList())
-          // Uploaded Chunks List (shown when not recording or viewing existing session)
-          else if (recordingState.session != null ||
+          // Chunk Status List (always shown when session exists)
+          if (recordingState.session != null ||
               widget.existingSessionId != null)
-            const Expanded(child: UploadedChunksList()),
+            Expanded(
+              child: Column(
+                children: [
+                  // See uploaded chunks button
+                  if (recordingState.uploadedChunks > 0)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      child: TextButton.icon(
+                        onPressed: () {
+                          if (recordingState.session?.sessionId != null) {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    UploadedChunksViewerScreen(
+                                      sessionId:
+                                          recordingState.session!.sessionId,
+                                    ),
+                              ),
+                            );
+                          }
+                        },
+                        icon: const Icon(Icons.play_circle_outline),
+                        label: Text(loc.translate('seeUploadedChunks')),
+                      ),
+                    ),
+                  const Expanded(child: ChunkStatusList()),
+                ],
+              ),
+            ),
           // Control buttons
           Container(
             padding: const EdgeInsets.all(24),
@@ -168,9 +197,22 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
               children: [
                 if (!recordingState.isRecording)
                   ElevatedButton.icon(
-                    onPressed: () => _startRecording(context, ref, patient.id),
-                    icon: const Icon(Icons.fiber_manual_record),
-                    label: Text(loc.translate('startRecording')),
+                    onPressed: () =>
+                        _startOrResumeRecording(context, ref, patient.id),
+                    icon: Icon(
+                      widget.existingSessionId != null &&
+                              recordingState.session?.uploadedChunks != null &&
+                              recordingState.session!.uploadedChunks > 0
+                          ? Icons.play_arrow
+                          : Icons.fiber_manual_record,
+                    ),
+                    label: Text(
+                      widget.existingSessionId != null &&
+                              recordingState.session?.uploadedChunks != null &&
+                              recordingState.session!.uploadedChunks > 0
+                          ? loc.translate('resumeRecording')
+                          : loc.translate('startRecording'),
+                    ),
                     style: ElevatedButton.styleFrom(
                       padding: const EdgeInsets.symmetric(
                         horizontal: 32,
@@ -213,14 +255,12 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
     );
   }
 
-  Future<void> _startRecording(
+  Future<void> _startOrResumeRecording(
     BuildContext context,
     WidgetRef ref,
     String patientId,
   ) async {
     try {
-      final userId = await ref.read(userIdProvider.future);
-
       // Check permissions
       final audioService = ref.read(audioRecordingServiceProvider);
       if (!await audioService.checkPermissions()) {
@@ -239,9 +279,22 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         }
       }
 
-      await ref
-          .read(recordingSessionProvider.notifier)
-          .startRecording(patientId, userId);
+      final recordingState = ref.read(recordingSessionProvider);
+
+      // If we have an existing session with uploaded chunks, resume it
+      if (widget.existingSessionId != null &&
+          recordingState.session != null &&
+          recordingState.session!.uploadedChunks > 0) {
+        await ref
+            .read(recordingSessionProvider.notifier)
+            .resumeRecordingSession();
+      } else {
+        // Otherwise start a new recording
+        final userId = await ref.read(userIdProvider.future);
+        await ref
+            .read(recordingSessionProvider.notifier)
+            .startRecording(patientId, userId);
+      }
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

@@ -39,14 +39,17 @@ class AudioRecordingService {
     return status.isGranted;
   }
 
-  Future<void> startRecording(String sessionId) async {
+  Future<void> startRecording(
+    String sessionId, {
+    int startingSequenceNumber = 0,
+  }) async {
     try {
       if (!await checkPermissions()) {
         throw Exception('Microphone permission not granted');
       }
 
       _currentSessionId = sessionId;
-      _sequenceNumber = 0;
+      _sequenceNumber = startingSequenceNumber;
 
       // Get app directory for storing chunks
       final appDir = await getApplicationDocumentsDirectory();
