@@ -4,6 +4,7 @@ import 'package:logger/logger.dart';
 import '../models/recording_session.dart';
 import '../services/chunk_upload_service.dart';
 import 'service_providers.dart';
+import 'patient_providers.dart';
 
 final recordingSessionProvider =
     NotifierProvider<RecordingSessionNotifier, RecordingSessionState>(
@@ -15,6 +16,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
   StreamSubscription? _chunkSubscription;
   StreamSubscription? _amplitudeSubscription;
   StreamSubscription? _uploadProgressSubscription;
+  Timer? _durationUpdateTimer;
 
   @override
   RecordingSessionState build() {
@@ -24,6 +26,10 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
   Future<void> startRecording(String patientId, String userId) async {
     try {
       _logger.i('Starting recording for patient: $patientId');
+
+      // Get patient name for notification
+      final selectedPatient = ref.read(selectedPatientProvider);
+      final patientName = selectedPatient?.name ?? 'Unknown Patient';
 
       // Create session on backend
       final apiService = ref.read(apiServiceProvider);
@@ -51,6 +57,20 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
 
       await _startAudioRecording(sessionId, startingSequenceNumber: 0);
 
+      // Show recording notification
+      final notificationService = ref.read(
+        recordingNotificationServiceProvider,
+      );
+      await notificationService.showRecordingNotification(
+        patientName: patientName,
+        duration: '00:00',
+        uploadedChunks: 0,
+        totalChunks: 0,
+      );
+
+      // Start timer to update notification duration every 10 seconds
+      _startDurationUpdateTimer(patientName);
+
       _logger.i('Recording started successfully');
     } catch (e) {
       _logger.e('Error starting recording: $e');
@@ -67,6 +87,10 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
 
       _logger.i('Resuming recording for session: ${state.session!.sessionId}');
 
+      // Get patient name for notification
+      final selectedPatient = ref.read(selectedPatientProvider);
+      final patientName = selectedPatient?.name ?? 'Unknown Patient';
+
       state = state.copyWith(isRecording: true, isPaused: false);
 
       // Start from the next sequence number after the last chunk
@@ -77,6 +101,23 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
         state.session!.sessionId,
         startingSequenceNumber: startingSequence,
       );
+
+      // Show recording notification
+      final duration = _formatDuration(
+        DateTime.now().difference(state.session!.startTime),
+      );
+      final notificationService = ref.read(
+        recordingNotificationServiceProvider,
+      );
+      await notificationService.showRecordingNotification(
+        patientName: patientName,
+        duration: duration,
+        uploadedChunks: state.uploadedChunks,
+        totalChunks: state.totalChunks,
+      );
+
+      // Start timer to update notification duration every 10 seconds
+      _startDurationUpdateTimer(patientName);
 
       _logger.i('Recording resumed successfully');
     } catch (e) {
@@ -135,6 +176,9 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
         uploadQueueSize: progress.queueSize,
         lastUploadStatus: progress.status,
       );
+
+      // Update notification with current progress
+      _updateNotification();
     });
   }
 
@@ -144,6 +188,9 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       await audioService.pauseRecording();
       state = state.copyWith(isPaused: true);
       _logger.i('Recording paused');
+
+      // Update notification to show paused state
+      _updateNotification(isPaused: true);
     } catch (e) {
       _logger.e('Error pausing recording: $e');
       state = state.copyWith(error: e.toString());
@@ -156,6 +203,9 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       await audioService.resumeRecording();
       state = state.copyWith(isPaused: false);
       _logger.i('Recording resumed');
+
+      // Update notification to show resumed state
+      _updateNotification();
     } catch (e) {
       _logger.e('Error resuming recording: $e');
       state = state.copyWith(error: e.toString());
@@ -166,6 +216,10 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
     try {
       _logger.i('Stopping recording');
 
+      // Stop duration update timer
+      _durationUpdateTimer?.cancel();
+      _durationUpdateTimer = null;
+
       final audioService = ref.read(audioRecordingServiceProvider);
       await audioService.stopRecording();
 
@@ -174,11 +228,33 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       await _uploadProgressSubscription?.cancel();
 
       if (state.session != null) {
-        final updatedSession = state.session!.copyWith(endTime: DateTime.now());
+        // Update session with final chunk counts and end time
+        final updatedSession = state.session!.copyWith(
+          endTime: DateTime.now(),
+          totalChunks: state.totalChunks,
+          uploadedChunks: state.uploadedChunks,
+          status: 'completed',
+        );
         state = state.copyWith(
           session: updatedSession,
           isRecording: false,
           isPaused: false,
+        );
+
+        // Show completed notification
+        final selectedPatient = ref.read(selectedPatientProvider);
+        final patientName = selectedPatient?.name ?? 'Unknown Patient';
+        final duration = _formatDuration(
+          DateTime.now().difference(updatedSession.startTime),
+        );
+        final notificationService = ref.read(
+          recordingNotificationServiceProvider,
+        );
+
+        await notificationService.showCompletedNotification(
+          patientName: patientName,
+          duration: duration,
+          totalChunks: state.totalChunks,
         );
       }
 
@@ -186,6 +262,12 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
     } catch (e) {
       _logger.e('Error stopping recording: $e');
       state = state.copyWith(error: e.toString(), isRecording: false);
+
+      // Cancel notification on error
+      final notificationService = ref.read(
+        recordingNotificationServiceProvider,
+      );
+      await notificationService.cancelRecordingNotification();
     }
   }
 
@@ -237,10 +319,54 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
   }
 
   void reset() {
+    _durationUpdateTimer?.cancel();
     _chunkSubscription?.cancel();
     _amplitudeSubscription?.cancel();
     _uploadProgressSubscription?.cancel();
+
+    final notificationService = ref.read(recordingNotificationServiceProvider);
+    notificationService.cancelRecordingNotification();
+
     state = RecordingSessionState.initial();
+  }
+
+  // Helper method to start timer for updating notification duration
+  void _startDurationUpdateTimer(String patientName) {
+    _durationUpdateTimer?.cancel();
+    _durationUpdateTimer = Timer.periodic(
+      const Duration(seconds: 10),
+      (_) => _updateNotification(),
+    );
+  }
+
+  // Helper method to update notification with current recording state
+  void _updateNotification({bool isPaused = false}) {
+    if (state.session == null) return;
+
+    final selectedPatient = ref.read(selectedPatientProvider);
+    final patientName = selectedPatient?.name ?? 'Unknown Patient';
+    final duration = _formatDuration(
+      DateTime.now().difference(state.session!.startTime),
+    );
+
+    final notificationService = ref.read(recordingNotificationServiceProvider);
+
+    notificationService.updateRecordingNotification(
+      patientName: patientName,
+      duration: duration,
+      uploadedChunks: state.uploadedChunks,
+      totalChunks: state.totalChunks,
+      queueSize: state.uploadQueueSize,
+      failedChunks: state.failedChunks,
+    );
+  }
+
+  // Helper method to format duration as HH:MM:SS
+  String _formatDuration(Duration duration) {
+    final hours = duration.inHours.toString().padLeft(2, '0');
+    final minutes = (duration.inMinutes % 60).toString().padLeft(2, '0');
+    final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
+    return '$hours:$minutes:$seconds';
   }
 }
 

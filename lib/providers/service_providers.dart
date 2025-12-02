@@ -3,6 +3,7 @@ import '../services/api_service.dart';
 import '../services/audio_recording_service.dart';
 import '../services/chunk_upload_service.dart';
 import '../services/chunk_storage_service.dart';
+import '../services/recording_notification_service.dart';
 import '../models/audio_chunk.dart';
 import 'recording_providers.dart';
 
@@ -33,6 +34,14 @@ final chunkUploadServiceProvider = Provider<ChunkUploadService>((ref) {
   ref.onDispose(() => service.dispose());
   return service;
 });
+
+// Recording Notification Service Provider
+final recordingNotificationServiceProvider =
+    Provider<RecordingNotificationService>((ref) {
+      final service = RecordingNotificationService();
+      ref.onDispose(() => service.dispose());
+      return service;
+    });
 
 // Stream provider for real-time chunk status updates
 final chunksStreamProvider = StreamProvider.family<List<AudioChunk>, String?>((

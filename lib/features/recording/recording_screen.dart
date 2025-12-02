@@ -259,17 +259,13 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                       onPressed: () =>
                           _startOrResumeRecording(context, ref, patient.id),
                       icon: Icon(
-                        widget.existingSessionId != null &&
-                                recordingState.session?.uploadedChunks !=
-                                    null &&
+                        recordingState.session != null &&
                                 recordingState.session!.uploadedChunks > 0
                             ? Icons.play_arrow
                             : Icons.fiber_manual_record,
                       ),
                       label: Text(
-                        widget.existingSessionId != null &&
-                                recordingState.session?.uploadedChunks !=
-                                    null &&
+                        recordingState.session != null &&
                                 recordingState.session!.uploadedChunks > 0
                             ? loc.translate('resumeRecording')
                             : loc.translate('startRecording'),
@@ -344,8 +340,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       final recordingState = ref.read(recordingSessionProvider);
 
       // If we have an existing session with uploaded chunks, resume it
-      if (widget.existingSessionId != null &&
-          recordingState.session != null &&
+      if (recordingState.session != null &&
           recordingState.session!.uploadedChunks > 0) {
         await ref
             .read(recordingSessionProvider.notifier)
@@ -371,9 +366,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
   }
 
   Future<void> _stopRecording(BuildContext context, WidgetRef ref) async {
-    await ref.read(recordingSessionProvider.notifier).stopRecording();
-
-    // Wait for pending uploads
+    // Show uploading dialog immediately
     if (context.mounted) {
       showDialog(
         context: context,
@@ -390,9 +383,20 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       );
     }
 
+    // Stop recording
+    await ref.read(recordingSessionProvider.notifier).stopRecording();
+
+    // Wait for pending uploads
     await ref
         .read(recordingSessionProvider.notifier)
         .waitForUploadsToComplete();
+
+    // Force refresh the chunk storage to update UI with latest states
+    final sessionId = ref.read(recordingSessionProvider).session?.sessionId;
+    if (sessionId != null) {
+      // Invalidate the provider to force rebuild with updated chunk states
+      ref.invalidate(currentSessionChunksProvider);
+    }
 
     if (context.mounted) {
       Navigator.of(context).pop(); // Close loading dialog

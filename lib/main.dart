@@ -17,6 +17,13 @@ void main() async {
     final storageService = container.read(chunkStorageServiceProvider);
     await storageService.init();
 
+    // Initialize notification service
+    final notificationService = container.read(
+      recordingNotificationServiceProvider,
+    );
+    await notificationService.initialize();
+    await notificationService.requestPermissions();
+
     // Resume any pending uploads from previous session
     final uploadService = container.read(chunkUploadServiceProvider);
     uploadService.startQueueProcessing(); // Start background processing
