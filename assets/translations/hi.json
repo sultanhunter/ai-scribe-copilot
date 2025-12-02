@@ -46,7 +46,9 @@
   "audioLevel": "ऑडियो स्तर",
   "uploadProgress": "अपलोड प्रगति",
   "chunksUploaded": "चंक अपलोड हुए",
+  "uploadedChunks": "अपलोड किए गए चंक",
   "chunksFailed": "चंक विफल",
+  "queueSize": "कतार का आकार",
   "selectPatient": "रिकॉर्डिंग शुरू करने के लिए एक मरीज़ चुनें",
   "recordingInProgress": "रिकॉर्डिंग प्रगति में है"
 }

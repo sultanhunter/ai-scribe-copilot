@@ -46,7 +46,9 @@
   "audioLevel": "Audio Level",
   "uploadProgress": "Upload Progress",
   "chunksUploaded": "Chunks Uploaded",
+  "uploadedChunks": "Uploaded Chunks",
   "chunksFailed": "Chunks Failed",
+  "queueSize": "Queue Size",
   "selectPatient": "Select a patient to start recording",
   "recordingInProgress": "Recording in progress"
 }

@@ -1,7 +1,7 @@
 class AppConstants {
   // API Configuration
-  static const String baseUrl =
-      'YOUR_BACKEND_URL'; // Will be replaced with actual URL
+  // Using local IP for physical device testing
+  static const String baseUrl = 'http://192.168.1.12:3000/api';
   static const String apiVersion = 'v1';
 
   // Audio Recording Settings
