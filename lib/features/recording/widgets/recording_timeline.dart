@@ -160,7 +160,7 @@ class _RecordingTimelineState extends ConsumerState<RecordingTimeline> {
                             color: Theme.of(context)
                                 .colorScheme
                                 .surfaceContainerHighest
-                                .withOpacity(0.3),
+                                .withValues(alpha: 0.3),
                           ),
                           // Active recording progress
                           if (displaySeconds > 0)
@@ -170,7 +170,7 @@ class _RecordingTimelineState extends ConsumerState<RecordingTimeline> {
                               decoration: BoxDecoration(
                                 color: Theme.of(
                                   context,
-                                ).colorScheme.primary.withOpacity(0.3),
+                                ).colorScheme.primary.withValues(alpha: 0.3),
                                 border: Border(
                                   right: BorderSide(
                                     color: Theme.of(

@@ -1,10 +1,10 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:logger/logger.dart';
+import 'package:audio_session/audio_session.dart';
 import '../models/recording_session.dart';
 import '../services/chunk_upload_service.dart';
 import 'service_providers.dart';
-import 'patient_providers.dart';
 import 'patient_providers.dart';
 
 final recordingSessionProvider =
@@ -15,13 +15,39 @@ final recordingSessionProvider =
 class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
   final Logger _logger = Logger();
   StreamSubscription? _chunkSubscription;
-  StreamSubscription? _amplitudeSubscription;
   StreamSubscription? _uploadProgressSubscription;
   Timer? _durationUpdateTimer;
+  bool _pausedByInterruption = false;
+
+  AudioSession? _audioSession;
+  StreamSubscription<AudioInterruptionEvent>? _interruptionSubscription;
 
   @override
   RecordingSessionState build() {
     return RecordingSessionState.initial();
+  }
+
+  Future<void> _initAudioSession() async {
+    _audioSession = await AudioSession.instance;
+    await _audioSession!.configure(
+      AudioSessionConfiguration(
+        avAudioSessionCategory: AVAudioSessionCategory.playAndRecord,
+        avAudioSessionCategoryOptions:
+            AVAudioSessionCategoryOptions.allowBluetooth |
+            AVAudioSessionCategoryOptions.defaultToSpeaker,
+        avAudioSessionMode: AVAudioSessionMode.spokenAudio,
+        avAudioSessionRouteSharingPolicy:
+            AVAudioSessionRouteSharingPolicy.defaultPolicy,
+        avAudioSessionSetActiveOptions: AVAudioSessionSetActiveOptions.none,
+        androidAudioAttributes: const AndroidAudioAttributes(
+          contentType: AndroidAudioContentType.speech,
+          flags: AndroidAudioFlags.none,
+          usage: AndroidAudioUsage.voiceCommunication,
+        ),
+        androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+        androidWillPauseWhenDucked: true,
+      ),
+    );
   }
 
   Future<void> startRecording(String patientId, String userId) async {
@@ -131,6 +157,14 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
     String sessionId, {
     int startingSequenceNumber = 0,
   }) async {
+    // Initialize and activate audio session
+    await _initAudioSession();
+    if (await _audioSession!.setActive(true)) {
+      _logger.i('Audio session activated');
+    } else {
+      _logger.w('Failed to activate audio session');
+    }
+
     // Start continuous audio recording
     final audioService = ref.read(audioRecordingServiceProvider);
     await audioService.startRecording(sessionId);
@@ -163,11 +197,6 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       },
     );
 
-    // Listen to amplitude for visualization
-    _amplitudeSubscription = audioService.amplitudeStream.listen((amplitude) {
-      state = state.copyWith(currentAmplitude: amplitude);
-    });
-
     // Listen to upload progress
     _uploadProgressSubscription = uploadService.progressStream.listen((
       progress,
@@ -196,6 +225,35 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       // Update notification with current progress
       _updateNotification();
     });
+
+    // Listen to audio interruptions (e.g. phone calls)
+    _interruptionSubscription = _audioSession!.interruptionEventStream.listen((
+      event,
+    ) async {
+      if (event.begin) {
+        if (state.isRecording && !state.isPaused) {
+          _logger.i('Audio interruption began, pausing recording');
+          _pausedByInterruption = true;
+          await pauseRecording();
+
+          // Show interruption notification
+          final selectedPatient = ref.read(selectedPatientProvider);
+          final patientName = selectedPatient?.name ?? 'Unknown Patient';
+          final notificationService = ref.read(
+            recordingNotificationServiceProvider,
+          );
+          await notificationService.showInterruptionNotification(
+            patientName: patientName,
+          );
+        }
+      } else {
+        if (_pausedByInterruption) {
+          _logger.i('Audio interruption ended. Waiting for user to resume.');
+          // Do not auto-resume. User must resume manually.
+          _pausedByInterruption = false;
+        }
+      }
+    });
   }
 
   Future<void> pauseRecording() async {
@@ -219,6 +277,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       final audioService = ref.read(audioRecordingServiceProvider);
       await audioService.resumeRecording();
 
+      _pausedByInterruption = false;
       state = state.copyWith(isPaused: false);
       _logger.i('Recording resumed');
 
@@ -250,8 +309,11 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       await audioService.stopRecording();
 
       await _chunkSubscription?.cancel();
-      await _amplitudeSubscription?.cancel();
       await _uploadProgressSubscription?.cancel();
+      await _interruptionSubscription?.cancel();
+
+      // Deactivate session
+      await _audioSession?.setActive(false);
 
       if (state.session != null) {
         // Update session with final chunk counts and end time
@@ -357,8 +419,8 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
   void reset() {
     _durationUpdateTimer?.cancel();
     _chunkSubscription?.cancel();
-    _amplitudeSubscription?.cancel();
     _uploadProgressSubscription?.cancel();
+    _interruptionSubscription?.cancel();
 
     final notificationService = ref.read(recordingNotificationServiceProvider);
     notificationService.cancelRecordingNotification();
@@ -388,6 +450,10 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
   // Helper method to update notification with current recording state
   void _updateNotification({bool isPaused = false}) {
     if (state.session == null) return;
+
+    // If paused by interruption, don't overwrite the interruption notification
+    // with standard progress updates.
+    if (_pausedByInterruption) return;
 
     final selectedPatient = ref.read(selectedPatientProvider);
     final patientName = selectedPatient?.name ?? 'Unknown Patient';
@@ -423,7 +489,6 @@ class RecordingSessionState {
   final int uploadedChunks;
   final int failedChunks;
   final int uploadQueueSize;
-  final double currentAmplitude;
   final UploadStatus? lastUploadStatus;
   final String? error;
   // final Duration recordedDuration; // Removed
@@ -437,7 +502,6 @@ class RecordingSessionState {
     required this.uploadedChunks,
     required this.failedChunks,
     required this.uploadQueueSize,
-    required this.currentAmplitude,
     this.lastUploadStatus,
     this.error,
     // this.recordedDuration = Duration.zero,
@@ -453,7 +517,6 @@ class RecordingSessionState {
       uploadedChunks: 0,
       failedChunks: 0,
       uploadQueueSize: 0,
-      currentAmplitude: 0.0,
       lastUploadStatus: null,
       error: null,
       // recordedDuration: Duration.zero,
@@ -469,7 +532,6 @@ class RecordingSessionState {
     int? uploadedChunks,
     int? failedChunks,
     int? uploadQueueSize,
-    double? currentAmplitude,
     UploadStatus? lastUploadStatus,
     String? error,
     // Duration? recordedDuration,
@@ -483,7 +545,6 @@ class RecordingSessionState {
       uploadedChunks: uploadedChunks ?? this.uploadedChunks,
       failedChunks: failedChunks ?? this.failedChunks,
       uploadQueueSize: uploadQueueSize ?? this.uploadQueueSize,
-      currentAmplitude: currentAmplitude ?? this.currentAmplitude,
       lastUploadStatus: lastUploadStatus ?? this.lastUploadStatus,
       error: error ?? this.error,
       // recordedDuration: recordedDuration ?? this.recordedDuration,

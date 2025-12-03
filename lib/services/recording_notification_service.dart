@@ -107,6 +107,32 @@ class RecordingNotificationService {
     }
   }
 
+  Future<void> showInterruptionNotification({
+    required String patientName,
+  }) async {
+    if (!Platform.isIOS) return;
+
+    try {
+      const notificationDetails = NotificationDetails(
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+          interruptionLevel: InterruptionLevel.timeSensitive,
+        ),
+      );
+
+      await _notifications.show(
+        recordingNotificationId,
+        '⚠️ Recording Paused',
+        'Recording interrupted. Open app to resume.',
+        notificationDetails,
+      );
+    } catch (e) {
+      _logger.e('Error showing interruption notification: $e');
+    }
+  }
+
   Future<void> showCompletedNotification({
     required String patientName,
     required String duration,

@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
@@ -14,11 +13,6 @@ class AudioRecordingService {
   final Logger _logger = Logger();
 
   String? _recordingFilePath;
-
-  final StreamController<double> _amplitudeController =
-      StreamController<double>.broadcast();
-
-  Stream<double> get amplitudeStream => _amplitudeController.stream;
 
   bool _isRecording = false;
   bool get isRecording => _isRecording;
@@ -73,7 +67,6 @@ class AudioRecordingService {
       }
 
       _isRecording = true;
-      _startAmplitudeMonitoring();
 
       _logger.i('Continuous recording started for session: $sessionId');
       _logger.i('Recording to: $_recordingFilePath');
@@ -81,24 +74,6 @@ class AudioRecordingService {
       _logger.e('Error starting recording: $e');
       rethrow;
     }
-  }
-
-  void _startAmplitudeMonitoring() {
-    Timer.periodic(const Duration(milliseconds: 100), (timer) async {
-      if (!_isRecording) {
-        timer.cancel();
-        return;
-      }
-
-      // Only get amplitude on Android (iOS native recorder doesn't support this)
-      if (Platform.isAndroid) {
-        final amplitude = await _recorder.getAmplitude();
-        _amplitudeController.add(amplitude.current);
-      } else {
-        // Send a dummy value for iOS
-        _amplitudeController.add(0.5);
-      }
-    });
   }
 
   Future<void> pauseRecording() async {
@@ -165,7 +140,6 @@ class AudioRecordingService {
   }
 
   void dispose() {
-    _amplitudeController.close();
     _recorder.dispose();
   }
 }
