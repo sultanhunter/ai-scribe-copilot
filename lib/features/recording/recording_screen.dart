@@ -167,7 +167,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
               Expanded(
                 child: Column(
                   children: [
-                    // See uploaded chunks button
+                    // Action buttons row
                     if (recordingState.session != null &&
                         !recordingState.isRecording &&
                         (recordingState.totalChunks > 0 ||
@@ -177,23 +177,35 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                           horizontal: 16,
                           vertical: 8,
                         ),
-                        child: TextButton.icon(
-                          onPressed: () {
-                            if (recordingState.session?.sessionId != null) {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (context) =>
-                                      UploadedChunksViewerScreen(
-                                        sessionId:
-                                            recordingState.session!.sessionId,
-                                      ),
-                                ),
-                              );
-                            }
-                          },
-                          icon: const Icon(Icons.play_circle_outline),
-                          label: Text(loc.translate('seeUploadedChunks')),
+                        child: Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            TextButton.icon(
+                              onPressed: () {
+                                if (recordingState.session?.sessionId != null) {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (context) =>
+                                          UploadedChunksViewerScreen(
+                                            sessionId: recordingState
+                                                .session!
+                                                .sessionId,
+                                          ),
+                                    ),
+                                  );
+                                }
+                              },
+                              icon: const Icon(Icons.play_circle_outline),
+                              label: Text(loc.translate('seeUploadedChunks')),
+                            ),
+                            const SizedBox(width: 16),
+                            TextButton.icon(
+                              onPressed: () => _shareRecording(context, ref),
+                              icon: const Icon(Icons.share),
+                              label: const Text('Share'),
+                            ),
+                          ],
                         ),
                       ),
                     const Expanded(child: ChunkStatusList()),
@@ -355,6 +367,50 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Recording saved successfully!')),
       );
+    }
+  }
+
+  Future<void> _shareRecording(BuildContext context, WidgetRef ref) async {
+    final sessionId = ref.read(recordingSessionProvider).session?.sessionId;
+    if (sessionId == null) return;
+
+    // Show loading dialog
+    if (context.mounted) {
+      showDialog(
+        context: context,
+        barrierDismissible: false,
+        builder: (context) => const AlertDialog(
+          content: Row(
+            children: [
+              CircularProgressIndicator(),
+              SizedBox(width: 16),
+              Text('Preparing recording...'),
+            ],
+          ),
+        ),
+      );
+    }
+
+    try {
+      final shareService = ref.read(recordingShareServiceProvider);
+      final success = await shareService.shareRecording(sessionId);
+
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+
+        if (!success) {
+          ScaffoldMessenger.of(
+            context,
+          ).showSnackBar(const SnackBar(content: Text('Share cancelled')));
+        }
+      }
+    } catch (e) {
+      if (context.mounted) {
+        Navigator.of(context).pop(); // Close loading dialog
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to share: ${e.toString()}')),
+        );
+      }
     }
   }
 }

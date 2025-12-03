@@ -270,6 +270,148 @@ class AudioLevelMonitor: NSObject, FlutterPlugin, FlutterStreamHandler {
     }
 }
 
+// Recording Share Handler Plugin
+class RecordingShareHandler: NSObject, FlutterPlugin {
+    private weak var viewController: UIViewController?
+    
+    static func register(with registrar: FlutterPluginRegistrar) {
+        let channel = FlutterMethodChannel(name: "ai_scribe_copilot/recording_share", binaryMessenger: registrar.messenger())
+        let instance = RecordingShareHandler()
+        registrar.addMethodCallDelegate(instance, channel: channel)
+    }
+    
+    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        switch call.method {
+        case "shareRecording":
+            guard let args = call.arguments as? [String: Any],
+                  let chunkPaths = args["chunkPaths"] as? [String],
+                  let sessionId = args["sessionId"] as? String else {
+                result(FlutterError(code: "INVALID_ARGUMENTS", message: "Missing required arguments", details: nil))
+                return
+            }
+            shareRecording(chunkPaths: chunkPaths, sessionId: sessionId, result: result)
+            
+        default:
+            result(FlutterMethodNotImplemented)
+        }
+    }
+    
+    private func shareRecording(chunkPaths: [String], sessionId: String, result: @escaping FlutterResult) {
+        DispatchQueue.global(qos: .userInitiated).async {
+            do {
+                // Combine chunks into a single WAV file
+                let combinedFileURL = try self.combineWAVChunks(chunkPaths: chunkPaths, sessionId: sessionId)
+                
+                // Present share sheet on main thread
+                DispatchQueue.main.async {
+                    self.presentShareSheet(fileURL: combinedFileURL, result: result)
+                }
+            } catch {
+                DispatchQueue.main.async {
+                    result(FlutterError(code: "COMBINE_ERROR", message: "Failed to combine audio chunks: \(error.localizedDescription)", details: nil))
+                }
+            }
+        }
+    }
+    
+    private func combineWAVChunks(chunkPaths: [String], sessionId: String) throws -> URL {
+        guard !chunkPaths.isEmpty else {
+            throw NSError(domain: "RecordingShareHandler", code: 1, userInfo: [NSLocalizedDescriptionKey: "No chunks to combine"])
+        }
+        
+        // Read first chunk to get WAV header
+        let firstChunkURL = URL(fileURLWithPath: chunkPaths[0])
+        let firstChunkData = try Data(contentsOf: firstChunkURL)
+        
+        // WAV header is 44 bytes
+        let headerSize = 44
+        guard firstChunkData.count > headerSize else {
+            throw NSError(domain: "RecordingShareHandler", code: 2, userInfo: [NSLocalizedDescriptionKey: "Invalid WAV file"])
+        }
+        
+        let header = firstChunkData.prefix(headerSize)
+        
+        // Collect all audio data (skip headers from each chunk)
+        var combinedAudioData = Data()
+        for chunkPath in chunkPaths {
+            let chunkURL = URL(fileURLWithPath: chunkPath)
+            let chunkData = try Data(contentsOf: chunkURL)
+            
+            // Skip header and append audio data
+            if chunkData.count > headerSize {
+                combinedAudioData.append(chunkData.suffix(from: headerSize))
+            }
+        }
+        
+        // Create output file in temporary directory
+        let tempDir = FileManager.default.temporaryDirectory
+        let outputFileName = "recording_\(sessionId).wav"
+        let outputURL = tempDir.appendingPathComponent(outputFileName)
+        
+        // Remove existing file if present
+        try? FileManager.default.removeItem(at: outputURL)
+        
+        // Create new WAV file with updated header
+        var finalData = Data(header)
+        
+        // Update file size in header (bytes 4-7)
+        let fileSize = UInt32(combinedAudioData.count + headerSize - 8)
+        var fileSizeBytes = fileSize.littleEndian
+        finalData.replaceSubrange(4..<8, with: Data(bytes: &fileSizeBytes, count: 4))
+        
+        // Update data chunk size (bytes 40-43)
+        var dataSize = UInt32(combinedAudioData.count).littleEndian
+        finalData.replaceSubrange(40..<44, with: Data(bytes: &dataSize, count: 4))
+        
+        // Append audio data
+        finalData.append(combinedAudioData)
+        
+        // Write to file
+        try finalData.write(to: outputURL)
+        
+        print("Combined \(chunkPaths.count) chunks into \(outputURL.path)")
+        return outputURL
+    }
+    
+    private func presentShareSheet(fileURL: URL, result: @escaping FlutterResult) {
+        // Get the root view controller
+        guard let windowScene = UIApplication.shared.connectedScenes.first as? UIWindowScene,
+              let window = windowScene.windows.first,
+              let rootViewController = window.rootViewController else {
+            result(FlutterError(code: "NO_VIEW_CONTROLLER", message: "Could not find view controller", details: nil))
+            return
+        }
+        
+        // Create activity view controller
+        let activityViewController = UIActivityViewController(
+            activityItems: [fileURL],
+            applicationActivities: nil
+        )
+        
+        // For iPad, set source view
+        if let popoverController = activityViewController.popoverPresentationController {
+            popoverController.sourceView = rootViewController.view
+            popoverController.sourceRect = CGRect(x: rootViewController.view.bounds.midX, y: rootViewController.view.bounds.midY, width: 0, height: 0)
+            popoverController.permittedArrowDirections = []
+        }
+        
+        // Handle completion
+        activityViewController.completionWithItemsHandler = { activityType, completed, returnedItems, error in
+            // Clean up temporary file
+            try? FileManager.default.removeItem(at: fileURL)
+            
+            if let error = error {
+                result(FlutterError(code: "SHARE_ERROR", message: error.localizedDescription, details: nil))
+            } else {
+                result(completed)
+            }
+        }
+        
+        // Present the share sheet
+        rootViewController.present(activityViewController, animated: true)
+    }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   override func application(
@@ -284,6 +426,9 @@ class AudioLevelMonitor: NSObject, FlutterPlugin, FlutterStreamHandler {
     
     // Register audio level monitor plugin
     AudioLevelMonitor.register(with: controller.registrar(forPlugin: "AudioLevelMonitor")!)
+    
+    // Register recording share handler plugin
+    RecordingShareHandler.register(with: controller.registrar(forPlugin: "RecordingShareHandler")!)
     
     // Configure audio session for background recording at app launch
     // Using .record category as per Apple documentation
