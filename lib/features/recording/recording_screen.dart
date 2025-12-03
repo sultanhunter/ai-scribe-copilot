@@ -157,7 +157,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                             ),
                             const SizedBox(height: 12),
                             Text(
-                              _formatDuration(recordingState.duration),
+                              _formatDuration(recordingState.currentDuration),
                               style: Theme.of(context).textTheme.headlineSmall,
                             ),
                           ],

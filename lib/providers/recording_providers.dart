@@ -5,6 +5,7 @@ import '../models/recording_session.dart';
 import '../services/chunk_upload_service.dart';
 import 'service_providers.dart';
 import 'patient_providers.dart';
+import 'patient_providers.dart';
 
 final recordingSessionProvider =
     NotifierProvider<RecordingSessionNotifier, RecordingSessionState>(
@@ -53,6 +54,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
         session: session,
         isRecording: true,
         isPaused: false,
+        currentDuration: Duration.zero,
       );
 
       await _startAudioRecording(sessionId, startingSequenceNumber: 0);
@@ -103,9 +105,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       );
 
       // Show recording notification
-      final duration = _formatDuration(
-        DateTime.now().difference(state.session!.startTime),
-      );
+      final duration = _formatDuration(state.currentDuration);
       final notificationService = ref.read(
         recordingNotificationServiceProvider,
       );
@@ -179,10 +179,11 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
 
       // Get accurate counts from storage service
       final storageService = ref.read(chunkStorageServiceProvider);
-      final stats = storageService.getStorageStats();
-      
+      final stats = storageService.getStorageStats(sessionId: sessionId);
+
       // Calculate uploaded chunks (uploaded + verified)
-      final uploadedCount = (stats['uploaded'] as int) + (stats['verified'] as int);
+      final uploadedCount =
+          (stats['uploaded'] as int) + (stats['verified'] as int);
       final failedCount = stats['failed'] as int;
 
       state = state.copyWith(
@@ -201,6 +202,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
     try {
       final audioService = ref.read(audioRecordingServiceProvider);
       await audioService.pauseRecording();
+
       state = state.copyWith(isPaused: true);
       _logger.i('Recording paused');
 
@@ -216,6 +218,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
     try {
       final audioService = ref.read(audioRecordingServiceProvider);
       await audioService.resumeRecording();
+
       state = state.copyWith(isPaused: false);
       _logger.i('Recording resumed');
 
@@ -234,6 +237,9 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       // Stop duration update timer
       _durationUpdateTimer?.cancel();
       _durationUpdateTimer = null;
+
+      // Calculate final duration
+      Duration finalDuration = state.currentDuration;
 
       // Stop chunking service first (will process remaining audio)
       final chunkingService = ref.read(audioChunkingServiceProvider);
@@ -259,14 +265,13 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
           session: updatedSession,
           isRecording: false,
           isPaused: false,
+          currentDuration: finalDuration,
         );
 
         // Show completed notification
         final selectedPatient = ref.read(selectedPatientProvider);
         final patientName = selectedPatient?.name ?? 'Unknown Patient';
-        final duration = _formatDuration(
-          DateTime.now().difference(updatedSession.startTime),
-        );
+        final duration = _formatDuration(finalDuration);
         final notificationService = ref.read(
           recordingNotificationServiceProvider,
         );
@@ -323,12 +328,23 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
         uploadedChunks: sessionData['uploadedChunks'] ?? 0,
       );
 
+      // Calculate recorded duration from chunks
+      final storageService = ref.read(chunkStorageServiceProvider);
+      final chunks = storageService.getChunksBySession(sessionId);
+      _logger.i('Found ${chunks.length} chunks for session $sessionId');
+
+      final recordedDuration = chunks.fold<Duration>(
+        Duration.zero,
+        (total, chunk) => total + (chunk.duration ?? Duration.zero),
+      );
+      _logger.i('Calculated duration: $recordedDuration');
       state = state.copyWith(
         session: session,
         isRecording: false,
         isPaused: false,
         totalChunks: session.totalChunks,
         uploadedChunks: session.uploadedChunks,
+        currentDuration: recordedDuration,
       );
 
       _logger.i('Session loaded successfully');
@@ -352,11 +368,21 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
 
   // Helper method to start timer for updating notification duration
   void _startDurationUpdateTimer(String patientName) {
+    _logger.i('Starting duration update timer');
     _durationUpdateTimer?.cancel();
     _durationUpdateTimer = Timer.periodic(
-      const Duration(seconds: 10),
-      (_) => _updateNotification(),
+      const Duration(seconds: 1),
+      (_) => _onTimerTick(),
     );
+  }
+
+  void _onTimerTick() {
+    if (state.isRecording && !state.isPaused) {
+      state = state.copyWith(
+        currentDuration: state.currentDuration + const Duration(seconds: 1),
+      );
+      _updateNotification();
+    }
   }
 
   // Helper method to update notification with current recording state
@@ -365,9 +391,8 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
 
     final selectedPatient = ref.read(selectedPatientProvider);
     final patientName = selectedPatient?.name ?? 'Unknown Patient';
-    final duration = _formatDuration(
-      DateTime.now().difference(state.session!.startTime),
-    );
+
+    final duration = _formatDuration(state.currentDuration);
 
     final notificationService = ref.read(recordingNotificationServiceProvider);
 
@@ -401,6 +426,8 @@ class RecordingSessionState {
   final double currentAmplitude;
   final UploadStatus? lastUploadStatus;
   final String? error;
+  // final Duration recordedDuration; // Removed
+  final Duration currentDuration;
 
   RecordingSessionState({
     this.session,
@@ -413,6 +440,8 @@ class RecordingSessionState {
     required this.currentAmplitude,
     this.lastUploadStatus,
     this.error,
+    // this.recordedDuration = Duration.zero,
+    this.currentDuration = Duration.zero,
   });
 
   factory RecordingSessionState.initial() {
@@ -427,6 +456,8 @@ class RecordingSessionState {
       currentAmplitude: 0.0,
       lastUploadStatus: null,
       error: null,
+      // recordedDuration: Duration.zero,
+      currentDuration: Duration.zero,
     );
   }
 
@@ -441,6 +472,8 @@ class RecordingSessionState {
     double? currentAmplitude,
     UploadStatus? lastUploadStatus,
     String? error,
+    // Duration? recordedDuration,
+    Duration? currentDuration,
   }) {
     return RecordingSessionState(
       session: session ?? this.session,
@@ -453,12 +486,8 @@ class RecordingSessionState {
       currentAmplitude: currentAmplitude ?? this.currentAmplitude,
       lastUploadStatus: lastUploadStatus ?? this.lastUploadStatus,
       error: error ?? this.error,
+      // recordedDuration: recordedDuration ?? this.recordedDuration,
+      currentDuration: currentDuration ?? this.currentDuration,
     );
-  }
-
-  Duration get duration {
-    if (session == null) return Duration.zero;
-    final end = session!.endTime ?? DateTime.now();
-    return end.difference(session!.startTime);
   }
 }

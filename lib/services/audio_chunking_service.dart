@@ -80,40 +80,43 @@ class AudioChunkingService {
     try {
       final randomAccess = await file.open();
       final length = await file.length();
-      
+
       // Read first 12 bytes (RIFF header)
       await randomAccess.setPosition(0);
       final riffHeader = await randomAccess.read(12);
-      
+
       // Check for RIFF and WAVE tags
       final riff = String.fromCharCodes(riffHeader.sublist(0, 4));
       final wave = String.fromCharCodes(riffHeader.sublist(8, 12));
-      
+
       if (riff != 'RIFF' || wave != 'WAVE') {
         _logger.w('Invalid WAV header: $riff, $wave');
         await randomAccess.close();
         return null;
       }
-      
+
       // Start searching for 'data' chunk from byte 12
       int position = 12;
-      
+
       while (position + 8 <= length) {
         await randomAccess.setPosition(position);
         final chunkHeader = await randomAccess.read(8);
         final chunkId = String.fromCharCodes(chunkHeader.sublist(0, 4));
-        final chunkSize = chunkHeader.buffer.asByteData().getUint32(4, Endian.little);
-        
+        final chunkSize = chunkHeader.buffer.asByteData().getUint32(
+          4,
+          Endian.little,
+        );
+
         if (chunkId == 'data') {
           await randomAccess.close();
           // The audio data starts after the chunk ID (4 bytes) and size (4 bytes)
           return position + 8;
         }
-        
+
         // Move to next chunk
         position += 8 + chunkSize;
       }
-      
+
       await randomAccess.close();
       return null;
     } catch (e) {
@@ -144,17 +147,17 @@ class AudioChunkingService {
           // Not ready yet or invalid file
           return;
         }
-        
+
         _audioDataOffset = offset;
         _logger.i('Found audio data offset at: $_audioDataOffset');
-        
+
         // Always start from the beginning of the audio data for a new file
         // regardless of sequence number (since this is a new file segment)
         _lastChunkedPosition = _audioDataOffset!;
       }
 
       final fileSize = await recordingFile.length();
-      
+
       // Calculate how much audio data is available
       final availableAudioBytes = fileSize - _audioDataOffset!;
 
@@ -215,6 +218,16 @@ class AudioChunkingService {
 
       await chunkFile.writeAsBytes(chunkData);
 
+      // Calculate duration
+      final durationSeconds =
+          chunkData.length /
+          (AppConstants.audioSampleRate *
+              1 *
+              2); // SampleRate * Channels * BytesPerSample
+      final duration = Duration(
+        microseconds: (durationSeconds * 1000000).round(),
+      );
+
       // Create chunk metadata
       final chunk = AudioChunk(
         chunkId: _uuid.v4(),
@@ -223,6 +236,7 @@ class AudioChunkingService {
         localPath: chunkPath,
         fileSize: chunkData.length,
         uploadState: ChunkUploadState.recorded,
+        duration: duration,
       );
 
       _chunkController.add(chunk);
@@ -251,9 +265,21 @@ class AudioChunkingService {
     view.setUint32(16, 16, Endian.little); // Chunk size (16 for PCM)
     view.setUint16(20, 1, Endian.little); // Audio format (1 for PCM)
     view.setUint16(22, 1, Endian.little); // Num channels (1 for mono)
-    view.setUint32(24, AppConstants.audioSampleRate, Endian.little); // Sample rate
-    view.setUint32(28, AppConstants.audioSampleRate * 2, Endian.little); // Byte rate (SampleRate * NumChannels * BitsPerSample/8)
-    view.setUint16(32, 2, Endian.little); // Block align (NumChannels * BitsPerSample/8)
+    view.setUint32(
+      24,
+      AppConstants.audioSampleRate,
+      Endian.little,
+    ); // Sample rate
+    view.setUint32(
+      28,
+      AppConstants.audioSampleRate * 2,
+      Endian.little,
+    ); // Byte rate (SampleRate * NumChannels * BitsPerSample/8)
+    view.setUint16(
+      32,
+      2,
+      Endian.little,
+    ); // Block align (NumChannels * BitsPerSample/8)
     view.setUint16(34, 16, Endian.little); // Bits per sample
 
     // data chunk
@@ -288,15 +314,15 @@ class AudioChunkingService {
       if (!await recordingFile.exists()) {
         return;
       }
-      
+
       // Ensure we have the offset
       if (_audioDataOffset == null) {
         _audioDataOffset = await _findAudioDataOffset(recordingFile);
         if (_audioDataOffset == null) return;
-        
+
         // If we just found the offset, update the start position
         if (_lastChunkedPosition == 0) {
-           _lastChunkedPosition = _calculateStartPosition(_nextSequenceNumber);
+          _lastChunkedPosition = _calculateStartPosition(_nextSequenceNumber);
         }
       }
 

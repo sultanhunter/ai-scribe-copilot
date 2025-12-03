@@ -233,8 +233,12 @@ class ChunkStorageService {
   }
 
   /// Get storage statistics
-  Map<String, dynamic> getStorageStats() {
-    final chunks = box.values.toList();
+  Map<String, dynamic> getStorageStats({String? sessionId}) {
+    var chunks = box.values.toList();
+
+    if (sessionId != null) {
+      chunks = chunks.where((c) => c.sessionId == sessionId).toList();
+    }
 
     return {
       'totalChunks': chunks.length,

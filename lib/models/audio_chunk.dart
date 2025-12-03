@@ -48,6 +48,9 @@ class AudioChunk extends HiveObject {
   @HiveField(11)
   String? errorMessage;
 
+  @HiveField(12)
+  final Duration? duration;
+
   AudioChunk({
     required this.chunkId,
     required this.sessionId,
@@ -61,6 +64,7 @@ class AudioChunk extends HiveObject {
     this.fileSize,
     this.checksum,
     this.errorMessage,
+    this.duration,
   }) : createdAt = createdAt ?? DateTime.now();
 
   AudioChunk copyWith({
@@ -76,6 +80,7 @@ class AudioChunk extends HiveObject {
     int? fileSize,
     String? checksum,
     String? errorMessage,
+    Duration? duration,
   }) {
     return AudioChunk(
       chunkId: chunkId ?? this.chunkId,
@@ -90,6 +95,7 @@ class AudioChunk extends HiveObject {
       fileSize: fileSize ?? this.fileSize,
       checksum: checksum ?? this.checksum,
       errorMessage: errorMessage ?? this.errorMessage,
+      duration: duration ?? this.duration,
     );
   }
 
@@ -107,6 +113,7 @@ class AudioChunk extends HiveObject {
       'fileSize': fileSize,
       'checksum': checksum,
       'errorMessage': errorMessage,
+      'duration': duration?.inMilliseconds,
     };
   }
 
@@ -131,6 +138,9 @@ class AudioChunk extends HiveObject {
       fileSize: json['fileSize'],
       checksum: json['checksum'],
       errorMessage: json['errorMessage'],
+      duration: json['duration'] != null
+          ? Duration(milliseconds: json['duration'])
+          : null,
     );
   }
 
