@@ -1,14 +1,14 @@
 import 'dart:io';
 import 'package:path_provider/path_provider.dart';
 import 'package:permission_handler/permission_handler.dart';
-import 'package:record/record.dart';
+// import 'package:record/record.dart';
 import 'package:logger/logger.dart';
 import '../core/constants/app_constants.dart';
 import 'native_audio_recorder.dart';
 
 /// Service to handle continuous audio recording to a single file
 class AudioRecordingService {
-  final AudioRecorder _recorder = AudioRecorder();
+  // final AudioRecorder _recorder = AudioRecorder();
   final NativeAudioRecorder _nativeRecorder = NativeAudioRecorder();
   final Logger _logger = Logger();
 
@@ -45,26 +45,11 @@ class AudioRecordingService {
       final timestamp = DateTime.now().millisecondsSinceEpoch;
       _recordingFilePath = '$recordingDir/recording_$timestamp.wav';
 
-      // Use native recorder on iOS for better background support
-      if (Platform.isIOS) {
-        await _nativeRecorder.startRecording(
-          _recordingFilePath!,
-          AppConstants.audioSampleRate,
-        );
-      } else {
-        // Start continuous recording on Android
-        await _recorder.start(
-          const RecordConfig(
-            encoder: AudioEncoder.wav,
-            sampleRate: AppConstants.audioSampleRate,
-            bitRate: AppConstants.audioBitRate,
-            autoGain: true,
-            echoCancel: true,
-            noiseSuppress: true,
-          ),
-          path: _recordingFilePath!,
-        );
-      }
+      // Use native recorder on both platforms
+      await _nativeRecorder.startRecording(
+        _recordingFilePath!,
+        AppConstants.audioSampleRate,
+      );
 
       _isRecording = true;
 
@@ -79,11 +64,7 @@ class AudioRecordingService {
   Future<void> pauseRecording() async {
     try {
       if (_isRecording) {
-        if (Platform.isIOS) {
-          await _nativeRecorder.pauseRecording();
-        } else {
-          await _recorder.pause();
-        }
+        await _nativeRecorder.pauseRecording();
         _isRecording = false;
         _logger.i('Recording paused');
       }
@@ -96,11 +77,7 @@ class AudioRecordingService {
   Future<void> resumeRecording() async {
     try {
       if (!_isRecording) {
-        if (Platform.isIOS) {
-          await _nativeRecorder.resumeRecording();
-        } else {
-          await _recorder.resume();
-        }
+        await _nativeRecorder.resumeRecording();
         _isRecording = true;
         _logger.i('Recording resumed');
       }
@@ -115,9 +92,7 @@ class AudioRecordingService {
       _isRecording = false;
 
       // Stop recording and get final file path
-      final finalPath = Platform.isIOS
-          ? await _nativeRecorder.stopRecording()
-          : await _recorder.stop();
+      final finalPath = await _nativeRecorder.stopRecording();
 
       _logger.i('Recording stopped. File: $finalPath');
 
@@ -140,6 +115,6 @@ class AudioRecordingService {
   }
 
   void dispose() {
-    _recorder.dispose();
+    // _recorder.dispose();
   }
 }

@@ -9,6 +9,9 @@ class MainActivity : FlutterActivity() {
         
         // Register audio level monitor plugin
         flutterEngine.plugins.add(AudioLevelMonitor())
+
+        // Register native audio recorder plugin
+        flutterEngine.plugins.add(NativeAudioRecorder())
         
         // Register recording share handler plugin
         flutterEngine.plugins.add(RecordingShareHandler())

@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter/services.dart';
 import 'package:logger/logger.dart';
 
@@ -11,9 +10,9 @@ class NativeAudioRecorder {
   /// Start recording to the specified path
   Future<bool> startRecording(String path, int sampleRate) async {
     try {
-      if (!Platform.isIOS) {
-        throw UnsupportedError('Native recorder only supports iOS');
-      }
+      // if (!Platform.isIOS) {
+      //   throw UnsupportedError('Native recorder only supports iOS');
+      // }
 
       final result = await _channel.invokeMethod<bool>('startRecording', {
         'path': path,
