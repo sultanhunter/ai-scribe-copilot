@@ -6,6 +6,7 @@ import '../../providers/recording_providers.dart';
 import '../../providers/service_providers.dart';
 import '../../providers/app_providers.dart';
 import 'widgets/chunk_status_list.dart';
+import 'widgets/recording_timeline.dart';
 import 'uploaded_chunks_viewer_screen.dart';
 
 class RecordingScreen extends ConsumerStatefulWidget {
@@ -110,106 +111,31 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         appBar: AppBar(title: Text(patient.name)),
         body: Column(
           children: [
-            // Recording Controls
+            // Recording Timeline
             SizedBox(
               height: 200,
-              child: Center(
-                child: Column(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: [
-                    // Audio level visualization
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Expanded(child: RecordingTimeline()),
+                  if (recordingState.error != null) ...[
+                    const SizedBox(height: 16),
                     Container(
-                      width: 150,
-                      height: 150,
+                      padding: const EdgeInsets.all(16),
+                      margin: const EdgeInsets.symmetric(horizontal: 24),
                       decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color:
-                            recordingState.isRecording &&
-                                !recordingState.isPaused
-                            ? Theme.of(
-                                context,
-                              ).colorScheme.primary.withOpacity(0.2)
-                            : Colors.grey.withOpacity(0.2),
-                        border: Border.all(
-                          color:
-                              recordingState.isRecording &&
-                                  !recordingState.isPaused
-                              ? Theme.of(context).colorScheme.primary
-                              : Colors.grey,
-                          width: 3,
-                        ),
+                        color: Theme.of(context).colorScheme.errorContainer,
+                        borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Center(
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              recordingState.isRecording &&
-                                      !recordingState.isPaused
-                                  ? Icons.mic
-                                  : Icons.mic_off,
-                              size: 48,
-                              color:
-                                  recordingState.isRecording &&
-                                      !recordingState.isPaused
-                                  ? Theme.of(context).colorScheme.primary
-                                  : Colors.grey,
-                            ),
-                            const SizedBox(height: 12),
-                            Text(
-                              _formatDuration(recordingState.currentDuration),
-                              style: Theme.of(context).textTheme.headlineSmall,
-                            ),
-                          ],
+                      child: Text(
+                        recordingState.error!,
+                        style: TextStyle(
+                          color: Theme.of(context).colorScheme.onErrorContainer,
                         ),
                       ),
                     ),
-                    const SizedBox(height: 24),
-                    if (recordingState.isRecording) ...[
-                      // Audio level indicator
-                      Container(
-                        width: 150,
-                        height: 8,
-                        decoration: BoxDecoration(
-                          color: Colors.grey.withOpacity(0.3),
-                          borderRadius: BorderRadius.circular(4),
-                        ),
-                        child: FractionallySizedBox(
-                          alignment: Alignment.centerLeft,
-                          widthFactor: recordingState.currentAmplitude.clamp(
-                            0.0,
-                            1.0,
-                          ),
-                          child: Container(
-                            decoration: BoxDecoration(
-                              color: Theme.of(context).colorScheme.primary,
-                              borderRadius: BorderRadius.circular(4),
-                            ),
-                          ),
-                        ),
-                      ),
-                    ],
-                    if (recordingState.error != null) ...[
-                      const SizedBox(height: 16),
-                      Container(
-                        padding: const EdgeInsets.all(16),
-                        margin: const EdgeInsets.symmetric(horizontal: 24),
-                        decoration: BoxDecoration(
-                          color: Theme.of(context).colorScheme.errorContainer,
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          recordingState.error!,
-                          style: TextStyle(
-                            color: Theme.of(
-                              context,
-                            ).colorScheme.onErrorContainer,
-                          ),
-                        ),
-                      ),
-                    ],
                   ],
-                ),
+                ],
               ),
             ),
             // Chunk Status List (always shown when session exists)
@@ -407,13 +333,5 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
         const SnackBar(content: Text('Recording saved successfully!')),
       );
     }
-  }
-
-  String _formatDuration(Duration duration) {
-    String twoDigits(int n) => n.toString().padLeft(2, '0');
-    final hours = twoDigits(duration.inHours);
-    final minutes = twoDigits(duration.inMinutes.remainder(60));
-    final seconds = twoDigits(duration.inSeconds.remainder(60));
-    return '$hours:$minutes:$seconds';
   }
 }

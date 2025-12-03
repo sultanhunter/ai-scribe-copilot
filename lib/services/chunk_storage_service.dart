@@ -21,6 +21,9 @@ class ChunkStorageService {
       if (!Hive.isAdapterRegistered(5)) {
         Hive.registerAdapter(ChunkUploadStateAdapter());
       }
+      if (!Hive.isAdapterRegistered(20)) {
+        Hive.registerAdapter(DurationAdapter());
+      }
 
       _chunksBox = await Hive.openBox<AudioChunk>(_boxName);
       _logger.i(
@@ -307,5 +310,21 @@ class ChunkUploadStateAdapter extends TypeAdapter<ChunkUploadState> {
   @override
   void write(BinaryWriter writer, ChunkUploadState obj) {
     writer.writeByte(obj.index);
+  }
+}
+
+/// Adapter for Duration
+class DurationAdapter extends TypeAdapter<Duration> {
+  @override
+  final int typeId = 20;
+
+  @override
+  Duration read(BinaryReader reader) {
+    return Duration(microseconds: reader.readInt());
+  }
+
+  @override
+  void write(BinaryWriter writer, Duration obj) {
+    writer.writeInt(obj.inMicroseconds);
   }
 }

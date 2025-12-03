@@ -29,13 +29,14 @@ class AudioChunkAdapter extends TypeAdapter<AudioChunk> {
       fileSize: fields[9] as int?,
       checksum: fields[10] as String?,
       errorMessage: fields[11] as String?,
+      duration: fields[12] as Duration?,
     );
   }
 
   @override
   void write(BinaryWriter writer, AudioChunk obj) {
     writer
-      ..writeByte(12)
+      ..writeByte(13)
       ..writeByte(0)
       ..write(obj.chunkId)
       ..writeByte(1)
@@ -59,7 +60,9 @@ class AudioChunkAdapter extends TypeAdapter<AudioChunk> {
       ..writeByte(10)
       ..write(obj.checksum)
       ..writeByte(11)
-      ..write(obj.errorMessage);
+      ..write(obj.errorMessage)
+      ..writeByte(12)
+      ..write(obj.duration);
   }
 
   @override
