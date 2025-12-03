@@ -14,10 +14,17 @@ import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicBoolean
 import kotlin.concurrent.thread
 
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import android.os.PowerManager
+
 class NativeAudioRecorder : FlutterPlugin, MethodCallHandler {
     private lateinit var channel: MethodChannel
+    private lateinit var context: Context
     private var audioRecord: AudioRecord? = null
     private var recordingThread: Thread? = null
+    private var wakeLock: PowerManager.WakeLock? = null
     private val isRecording = AtomicBoolean(false)
     private val isPaused = AtomicBoolean(false)
     private var filePath: String? = null
@@ -25,6 +32,7 @@ class NativeAudioRecorder : FlutterPlugin, MethodCallHandler {
     private var bufferSize = 0
 
     override fun onAttachedToEngine(flutterPluginBinding: FlutterPlugin.FlutterPluginBinding) {
+        context = flutterPluginBinding.applicationContext
         channel = MethodChannel(flutterPluginBinding.binaryMessenger, "ai_scribe_copilot/audio_recorder")
         channel.setMethodCallHandler(this)
     }
@@ -81,6 +89,23 @@ class NativeAudioRecorder : FlutterPlugin, MethodCallHandler {
                 return
             }
 
+            // Acquire WakeLock with 10 minute timeout (will be renewed if recording continues)
+            if (wakeLock == null) {
+                val powerManager = context.getSystemService(Context.POWER_SERVICE) as PowerManager
+                wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AiScribeCopilot::RecordingWakeLock")
+                wakeLock?.setReferenceCounted(false)
+            }
+            wakeLock?.acquire(10 * 60 * 1000L) // 10 minutes
+
+            // Start foreground service
+            val serviceIntent = Intent(context, RecordingForegroundService::class.java)
+            serviceIntent.action = RecordingForegroundService.ACTION_START_RECORDING
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                context.startForegroundService(serviceIntent)
+            } else {
+                context.startService(serviceIntent)
+            }
+
             audioRecord?.startRecording()
             isRecording.set(true)
             isPaused.set(false)
@@ -91,6 +116,7 @@ class NativeAudioRecorder : FlutterPlugin, MethodCallHandler {
 
             result.success(true)
         } catch (e: Exception) {
+            releaseWakeLock()
             result.error("START_RECORDING_FAILED", e.message, null)
         }
     }
@@ -126,29 +152,16 @@ class NativeAudioRecorder : FlutterPlugin, MethodCallHandler {
         updateWavHeader(file)
     }
 
-    private fun stopRecording(result: Result) {
-        if (!isRecording.get()) {
-            result.success(null)
-            return
-        }
 
-        isRecording.set(false)
-        isPaused.set(false)
-        
-        try {
-            audioRecord?.stop()
-            audioRecord?.release()
-            audioRecord = null
-            recordingThread?.join() // Wait for thread to finish writing
-            result.success(filePath)
-        } catch (e: Exception) {
-            result.error("STOP_RECORDING_FAILED", e.message, null)
-        }
-    }
 
     private fun pauseRecording(result: Result) {
         if (isRecording.get() && !isPaused.get()) {
             isPaused.set(true)
+            try {
+                audioRecord?.stop()
+            } catch (e: Exception) {
+                // Ignore error if already stopped
+            }
             result.success(true)
         } else {
             result.success(false)
@@ -157,8 +170,13 @@ class NativeAudioRecorder : FlutterPlugin, MethodCallHandler {
 
     private fun resumeRecording(result: Result) {
         if (isRecording.get() && isPaused.get()) {
-            isPaused.set(false)
-            result.success(true)
+            try {
+                audioRecord?.startRecording()
+                isPaused.set(false)
+                result.success(true)
+            } catch (e: Exception) {
+                result.error("RESUME_FAILED", e.message, null)
+            }
         } else {
             result.success(false)
         }
@@ -255,5 +273,40 @@ class NativeAudioRecorder : FlutterPlugin, MethodCallHandler {
 
     override fun onDetachedFromEngine(binding: FlutterPlugin.FlutterPluginBinding) {
         channel.setMethodCallHandler(null)
+        stopRecording(null)
+    }
+
+    private fun stopRecording(result: Result?) {
+        if (!isRecording.get()) {
+            result?.success(null)
+            return
+        }
+
+        isRecording.set(false)
+        isPaused.set(false)
+        
+        try {
+            audioRecord?.stop()
+            audioRecord?.release()
+            audioRecord = null
+            recordingThread?.join() // Wait for thread to finish writing
+            releaseWakeLock()
+            
+            // Stop foreground service
+            val serviceIntent = Intent(context, RecordingForegroundService::class.java)
+            serviceIntent.action = RecordingForegroundService.ACTION_STOP_RECORDING
+            context.startService(serviceIntent)
+            
+            result?.success(filePath)
+        } catch (e: Exception) {
+            releaseWakeLock()
+            result?.error("STOP_RECORDING_FAILED", e.message, null)
+        }
+    }
+
+    private fun releaseWakeLock() {
+        if (wakeLock?.isHeld == true) {
+            wakeLock?.release()
+        }
     }
 }

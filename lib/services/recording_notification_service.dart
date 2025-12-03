@@ -1,4 +1,3 @@
-import 'dart:io';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:logger/logger.dart';
 
@@ -14,16 +13,20 @@ class RecordingNotificationService {
   final Logger _logger = Logger();
 
   Future<void> initialize() async {
-    if (!Platform.isIOS) return;
+    // if (!Platform.isIOS) return;
 
     const initializationSettingsIOS = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: true,
       requestSoundPermission: false,
+      defaultPresentAlert: true,
+      defaultPresentBadge: true,
+      defaultPresentSound: false,
     );
 
     const initializationSettings = InitializationSettings(
       iOS: initializationSettingsIOS,
+      android: AndroidInitializationSettings('@mipmap/ic_launcher'),
     );
 
     await _notifications.initialize(initializationSettings);
@@ -31,13 +34,19 @@ class RecordingNotificationService {
   }
 
   Future<void> requestPermissions() async {
-    if (!Platform.isIOS) return;
+    // if (!Platform.isIOS) return;
 
     await _notifications
         .resolvePlatformSpecificImplementation<
           IOSFlutterLocalNotificationsPlugin
         >()
         ?.requestPermissions(alert: true, badge: true, sound: false);
+
+    await _notifications
+        .resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin
+        >()
+        ?.requestNotificationsPermission();
   }
 
   Future<void> showRecordingNotification({
@@ -46,7 +55,7 @@ class RecordingNotificationService {
     required int uploadedChunks,
     required int totalChunks,
   }) async {
-    if (!Platform.isIOS) return;
+    // if (!Platform.isIOS) return;
 
     try {
       const notificationDetails = NotificationDetails(
@@ -56,6 +65,15 @@ class RecordingNotificationService {
           presentSound: false,
           // Keep notification visible even when app is in foreground
           interruptionLevel: InterruptionLevel.timeSensitive,
+        ),
+        android: AndroidNotificationDetails(
+          channelId,
+          channelName,
+          channelDescription: channelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          ongoing: true,
+          autoCancel: false,
         ),
       );
 
@@ -78,7 +96,7 @@ class RecordingNotificationService {
     int? queueSize,
     int? failedChunks,
   }) async {
-    if (!Platform.isIOS) return;
+    // if (!Platform.isIOS) return;
 
     try {
       final status = queueSize != null && queueSize > 0
@@ -93,6 +111,16 @@ class RecordingNotificationService {
           presentBadge: true,
           presentSound: false,
           interruptionLevel: InterruptionLevel.timeSensitive,
+        ),
+        android: AndroidNotificationDetails(
+          channelId,
+          channelName,
+          channelDescription: channelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          ongoing: true,
+          autoCancel: false,
+          onlyAlertOnce: true,
         ),
       );
 
@@ -110,7 +138,7 @@ class RecordingNotificationService {
   Future<void> showInterruptionNotification({
     required String patientName,
   }) async {
-    if (!Platform.isIOS) return;
+    // if (!Platform.isIOS) return;
 
     try {
       const notificationDetails = NotificationDetails(
@@ -119,6 +147,15 @@ class RecordingNotificationService {
           presentBadge: true,
           presentSound: true,
           interruptionLevel: InterruptionLevel.timeSensitive,
+        ),
+        android: AndroidNotificationDetails(
+          channelId,
+          channelName,
+          channelDescription: channelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+          ongoing: true,
+          autoCancel: false,
         ),
       );
 
@@ -138,7 +175,7 @@ class RecordingNotificationService {
     required String duration,
     required int totalChunks,
   }) async {
-    if (!Platform.isIOS) return;
+    // if (!Platform.isIOS) return;
 
     try {
       const notificationDetails = NotificationDetails(
@@ -147,6 +184,13 @@ class RecordingNotificationService {
           presentBadge: true,
           presentSound: true,
           interruptionLevel: InterruptionLevel.active,
+        ),
+        android: AndroidNotificationDetails(
+          channelId,
+          channelName,
+          channelDescription: channelDescription,
+          importance: Importance.defaultImportance,
+          priority: Priority.defaultPriority,
         ),
       );
 
@@ -166,7 +210,7 @@ class RecordingNotificationService {
   }
 
   Future<void> cancelRecordingNotification() async {
-    if (!Platform.isIOS) return;
+    // if (!Platform.isIOS) return;
 
     try {
       await _notifications.cancel(recordingNotificationId);
