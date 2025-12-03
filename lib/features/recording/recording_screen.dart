@@ -131,7 +131,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                           AudioLevelIndicator(
                             level: recordingState.currentAudioLevel,
                             barCount: 25,
-                            height: 50,
+                            height: 40,
                           ),
                           const SizedBox(height: 4),
                           Text(

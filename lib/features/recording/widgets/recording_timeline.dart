@@ -22,7 +22,7 @@ class _RecordingTimelineState extends ConsumerState<RecordingTimeline> {
   static const double _rulerHeight = 30.0;
   static const double _recordingTrackHeight = 30.0;
   static const double _chunkTrackHeight = 60.0;
-  static const double _timelineHeight = 160.0;
+  static const double _timelineHeight = 180.0;
 
   @override
   void initState() {
