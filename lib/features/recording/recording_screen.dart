@@ -220,8 +220,8 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                   children: [
                     // See uploaded chunks button
                     if (recordingState.session != null &&
-                        (recordingState.uploadedChunks > 0 ||
-                            recordingState.session!.uploadedChunks > 0))
+                        (recordingState.totalChunks > 0 ||
+                            recordingState.session!.totalChunks > 0))
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
