@@ -7,6 +7,7 @@ import '../../providers/service_providers.dart';
 import '../../providers/app_providers.dart';
 import 'widgets/chunk_status_list.dart';
 import 'widgets/recording_timeline.dart';
+import 'widgets/audio_level_indicator.dart';
 import 'uploaded_chunks_viewer_screen.dart';
 
 class RecordingScreen extends ConsumerStatefulWidget {
@@ -118,7 +119,29 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   const Expanded(child: RecordingTimeline()),
-                  if (recordingState.error != null) ...[
+                  // Audio Level Indicator
+                  if (recordingState.isRecording && !recordingState.isPaused)
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 24,
+                        vertical: 8,
+                      ),
+                      child: Column(
+                        children: [
+                          AudioLevelIndicator(
+                            level: recordingState.currentAudioLevel,
+                            barCount: 25,
+                            height: 50,
+                          ),
+                          const SizedBox(height: 4),
+                          Text(
+                            'Microphone Level',
+                            style: Theme.of(context).textTheme.bodySmall,
+                          ),
+                        ],
+                      ),
+                    ),
+                  if (recordingState.error != null) ...{
                     const SizedBox(height: 16),
                     Container(
                       padding: const EdgeInsets.all(16),
@@ -134,7 +157,7 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                         ),
                       ),
                     ),
-                  ],
+                  },
                 ],
               ),
             ),

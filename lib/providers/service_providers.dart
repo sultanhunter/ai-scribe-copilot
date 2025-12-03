@@ -5,8 +5,16 @@ import '../services/audio_chunking_service.dart';
 import '../services/chunk_upload_service.dart';
 import '../services/chunk_storage_service.dart';
 import '../services/recording_notification_service.dart';
+import '../services/audio_level_service.dart';
 import '../models/audio_chunk.dart';
 import 'recording_providers.dart';
+
+// Audio Level Service Provider
+final audioLevelServiceProvider = Provider<AudioLevelService>((ref) {
+  final service = AudioLevelService();
+  ref.onDispose(() => service.dispose());
+  return service;
+});
 
 // Chunk Storage Service Provider (Singleton)
 final chunkStorageServiceProvider = Provider<ChunkStorageService>((ref) {

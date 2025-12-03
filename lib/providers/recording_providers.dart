@@ -16,6 +16,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
   final Logger _logger = Logger();
   StreamSubscription? _chunkSubscription;
   StreamSubscription? _uploadProgressSubscription;
+  StreamSubscription? _audioLevelSubscription;
   Timer? _durationUpdateTimer;
   bool _pausedByInterruption = false;
 
@@ -85,6 +86,9 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
 
       await _startAudioRecording(sessionId, startingSequenceNumber: 0);
 
+      // Start audio level monitoring
+      _startAudioLevelMonitoring();
+
       // Show recording notification
       final notificationService = ref.read(
         recordingNotificationServiceProvider,
@@ -129,6 +133,9 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
         state.session!.sessionId,
         startingSequenceNumber: startingSequence,
       );
+
+      // Start audio level monitoring
+      _startAudioLevelMonitoring();
 
       // Show recording notification
       final duration = _formatDuration(state.currentDuration);
@@ -261,7 +268,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       final audioService = ref.read(audioRecordingServiceProvider);
       await audioService.pauseRecording();
 
-      state = state.copyWith(isPaused: true);
+      state = state.copyWith(isPaused: true, currentAudioLevel: 0.0);
       _logger.i('Recording paused');
 
       // Update notification to show paused state
@@ -311,9 +318,13 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       await _chunkSubscription?.cancel();
       await _uploadProgressSubscription?.cancel();
       await _interruptionSubscription?.cancel();
+      await _audioLevelSubscription?.cancel();
 
       // Deactivate session
       await _audioSession?.setActive(false);
+
+      // Stop audio level monitoring
+      await _stopAudioLevelMonitoring();
 
       if (state.session != null) {
         // Update session with final chunk counts and end time
@@ -421,6 +432,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
     _chunkSubscription?.cancel();
     _uploadProgressSubscription?.cancel();
     _interruptionSubscription?.cancel();
+    _audioLevelSubscription?.cancel();
 
     final notificationService = ref.read(recordingNotificationServiceProvider);
     notificationService.cancelRecordingNotification();
@@ -479,6 +491,38 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
     final seconds = (duration.inSeconds % 60).toString().padLeft(2, '0');
     return '$hours:$minutes:$seconds';
   }
+
+  // Start monitoring audio levels
+  void _startAudioLevelMonitoring() {
+    final audioLevelService = ref.read(audioLevelServiceProvider);
+
+    audioLevelService
+        .startMonitoring()
+        .then((_) {
+          _audioLevelSubscription = audioLevelService.levelStream.listen(
+            (level) {
+              if (state.isRecording && !state.isPaused) {
+                state = state.copyWith(currentAudioLevel: level);
+              }
+            },
+            onError: (error) {
+              _logger.e('Audio level stream error: $error');
+            },
+          );
+        })
+        .catchError((error) {
+          _logger.e('Failed to start audio level monitoring: $error');
+        });
+  }
+
+  // Stop monitoring audio levels
+  Future<void> _stopAudioLevelMonitoring() async {
+    await _audioLevelSubscription?.cancel();
+    _audioLevelSubscription = null;
+
+    final audioLevelService = ref.read(audioLevelServiceProvider);
+    await audioLevelService.stopMonitoring();
+  }
 }
 
 class RecordingSessionState {
@@ -493,6 +537,7 @@ class RecordingSessionState {
   final String? error;
   // final Duration recordedDuration; // Removed
   final Duration currentDuration;
+  final double currentAudioLevel;
 
   RecordingSessionState({
     this.session,
@@ -506,6 +551,7 @@ class RecordingSessionState {
     this.error,
     // this.recordedDuration = Duration.zero,
     this.currentDuration = Duration.zero,
+    this.currentAudioLevel = 0.0,
   });
 
   factory RecordingSessionState.initial() {
@@ -521,6 +567,7 @@ class RecordingSessionState {
       error: null,
       // recordedDuration: Duration.zero,
       currentDuration: Duration.zero,
+      currentAudioLevel: 0.0,
     );
   }
 
@@ -536,6 +583,7 @@ class RecordingSessionState {
     String? error,
     // Duration? recordedDuration,
     Duration? currentDuration,
+    double? currentAudioLevel,
   }) {
     return RecordingSessionState(
       session: session ?? this.session,
@@ -549,6 +597,7 @@ class RecordingSessionState {
       error: error ?? this.error,
       // recordedDuration: recordedDuration ?? this.recordedDuration,
       currentDuration: currentDuration ?? this.currentDuration,
+      currentAudioLevel: currentAudioLevel ?? this.currentAudioLevel,
     );
   }
 }

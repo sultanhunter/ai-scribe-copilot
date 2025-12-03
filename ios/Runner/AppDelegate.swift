@@ -132,6 +132,144 @@ class BackgroundAudioRecorder: NSObject, FlutterPlugin {
     }
 }
 
+// Audio Level Monitor Plugin
+class AudioLevelMonitor: NSObject, FlutterPlugin, FlutterStreamHandler {
+    private var eventSink: FlutterEventSink?
+    private var audioRecorder: AVAudioRecorder?
+    private var levelTimer: Timer?
+    private var isMonitoring = false
+    
+    static func register(with registrar: FlutterPluginRegistrar) {
+        let methodChannel = FlutterMethodChannel(name: "ai_scribe_copilot/audio_level", binaryMessenger: registrar.messenger())
+        let eventChannel = FlutterEventChannel(name: "ai_scribe_copilot/audio_level_stream", binaryMessenger: registrar.messenger())
+        let instance = AudioLevelMonitor()
+        registrar.addMethodCallDelegate(instance, channel: methodChannel)
+        eventChannel.setStreamHandler(instance)
+    }
+    
+    public func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
+        switch call.method {
+        case "startMonitoring":
+            startMonitoring(result: result)
+        case "stopMonitoring":
+            stopMonitoring(result: result)
+        default:
+            result(FlutterMethodNotImplemented)
+        }
+    }
+    
+    // FlutterStreamHandler methods
+    public func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+        self.eventSink = events
+        return nil
+    }
+    
+    public func onCancel(withArguments arguments: Any?) -> FlutterError? {
+        self.eventSink = nil
+        return nil
+    }
+    
+    private func startMonitoring(result: @escaping FlutterResult) {
+        guard !isMonitoring else {
+            result(true)
+            return
+        }
+        
+        // Setup audio session
+        let audioSession = AVAudioSession.sharedInstance()
+        do {
+            try audioSession.setCategory(.record, mode: .measurement, options: [])
+            try audioSession.setActive(true)
+        } catch {
+            result(FlutterError(code: "AUDIO_SESSION_ERROR", message: "Failed to setup audio session: \(error.localizedDescription)", details: nil))
+            return
+        }
+        
+        // Create a temporary file for the recorder (required by AVAudioRecorder)
+        let tempDir = NSTemporaryDirectory()
+        let tempFile = URL(fileURLWithPath: tempDir).appendingPathComponent("temp_audio_level.caf")
+        
+        // Configure recorder settings
+        let settings: [String: Any] = [
+            AVFormatIDKey: Int(kAudioFormatAppleIMA4),
+            AVSampleRateKey: 44100.0,
+            AVNumberOfChannelsKey: 1,
+            AVEncoderBitRateKey: 12800,
+            AVLinearPCMBitDepthKey: 16,
+            AVEncoderAudioQualityKey: AVAudioQuality.min.rawValue
+        ]
+        
+        do {
+            // Create recorder with metering enabled
+            audioRecorder = try AVAudioRecorder(url: tempFile, settings: settings)
+            audioRecorder?.isMeteringEnabled = true
+            audioRecorder?.prepareToRecord()
+            audioRecorder?.record()
+            
+            isMonitoring = true
+            
+            // Start timer to read audio levels at 10 Hz (every 100ms)
+            levelTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+                self?.updateAudioLevel()
+            }
+            
+            result(true)
+        } catch {
+            result(FlutterError(code: "RECORDER_ERROR", message: "Failed to create audio recorder: \(error.localizedDescription)", details: nil))
+        }
+    }
+    
+    private func stopMonitoring(result: @escaping FlutterResult) {
+        levelTimer?.invalidate()
+        levelTimer = nil
+        
+        audioRecorder?.stop()
+        audioRecorder = nil
+        
+        isMonitoring = false
+        
+        // Deactivate audio session
+        do {
+            try AVAudioSession.sharedInstance().setActive(false)
+        } catch {
+            print("Failed to deactivate audio session: \(error)")
+        }
+        
+        result(true)
+    }
+    
+    private func updateAudioLevel() {
+        guard let recorder = audioRecorder, let sink = eventSink else {
+            return
+        }
+        
+        // Update metering
+        recorder.updateMeters()
+        
+        // Get average power in decibels (-160 to 0)
+        let averagePower = recorder.averagePower(forChannel: 0)
+        
+        // Normalize to 0.0 - 1.0 range
+        // -160 dB is silence, 0 dB is maximum
+        // We'll use -50 dB as our minimum threshold for better visualization
+        let minDb: Float = -50.0
+        let maxDb: Float = 0.0
+        
+        let normalizedLevel: Double
+        if averagePower < minDb {
+            normalizedLevel = 0.0
+        } else if averagePower >= maxDb {
+            normalizedLevel = 1.0
+        } else {
+            // Linear interpolation between minDb and maxDb
+            normalizedLevel = Double((averagePower - minDb) / (maxDb - minDb))
+        }
+        
+        // Send to Flutter
+        sink(normalizedLevel)
+    }
+}
+
 @main
 @objc class AppDelegate: FlutterAppDelegate {
   override func application(
@@ -143,6 +281,9 @@ class BackgroundAudioRecorder: NSObject, FlutterPlugin {
     // Register native audio recorder plugin
     let controller = window?.rootViewController as! FlutterViewController
     BackgroundAudioRecorder.register(with: controller.registrar(forPlugin: "BackgroundAudioRecorder")!)
+    
+    // Register audio level monitor plugin
+    AudioLevelMonitor.register(with: controller.registrar(forPlugin: "AudioLevelMonitor")!)
     
     // Configure audio session for background recording at app launch
     // Using .record category as per Apple documentation
