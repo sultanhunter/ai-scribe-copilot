@@ -74,7 +74,6 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
         patientId: patientId,
         userId: userId,
         startTime: DateTime.now(),
-        status: 'recording',
       );
 
       state = state.copyWith(
@@ -329,10 +328,8 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       if (state.session != null) {
         // Update session with final chunk counts and end time
         final updatedSession = state.session!.copyWith(
-          endTime: DateTime.now(),
           totalChunks: state.totalChunks,
           uploadedChunks: state.uploadedChunks,
-          status: 'completed',
         );
         state = state.copyWith(
           session: updatedSession,
@@ -393,10 +390,7 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
         patientId: sessionData['patientId'],
         userId: sessionData['userId'],
         startTime: DateTime.parse(sessionData['startTime']),
-        endTime: sessionData['endTime'] != null
-            ? DateTime.parse(sessionData['endTime'])
-            : null,
-        status: sessionData['status'],
+
         totalChunks: sessionData['totalChunks'] ?? 0,
         uploadedChunks: sessionData['uploadedChunks'] ?? 0,
       );
