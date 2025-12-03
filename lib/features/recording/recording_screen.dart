@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../core/localization/app_localizations.dart';
 import '../../providers/patient_providers.dart';
@@ -220,8 +221,10 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                 children: [
                   if (!recordingState.isRecording)
                     ElevatedButton.icon(
-                      onPressed: () =>
-                          _startOrResumeRecording(context, ref, patient.id),
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        _startOrResumeRecording(context, ref, patient.id);
+                      },
                       icon: Icon(
                         recordingState.session != null &&
                                 recordingState.session!.totalChunks > 0
@@ -244,23 +247,32 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                   else ...[
                     if (!recordingState.isPaused)
                       IconButton.filled(
-                        onPressed: () => ref
-                            .read(recordingSessionProvider.notifier)
-                            .pauseRecording(),
+                        onPressed: () {
+                          HapticFeedback.mediumImpact();
+                          ref
+                              .read(recordingSessionProvider.notifier)
+                              .pauseRecording();
+                        },
                         icon: const Icon(Icons.pause),
                         iconSize: 32,
                       )
                     else
                       IconButton.filled(
-                        onPressed: () => ref
-                            .read(recordingSessionProvider.notifier)
-                            .resumeRecording(),
+                        onPressed: () {
+                          HapticFeedback.mediumImpact();
+                          ref
+                              .read(recordingSessionProvider.notifier)
+                              .resumeRecording();
+                        },
                         icon: const Icon(Icons.play_arrow),
                         iconSize: 32,
                       ),
                     const SizedBox(width: 24),
                     IconButton.filled(
-                      onPressed: () => _stopRecording(context, ref),
+                      onPressed: () {
+                        HapticFeedback.mediumImpact();
+                        _stopRecording(context, ref);
+                      },
                       icon: const Icon(Icons.stop),
                       iconSize: 32,
                       style: IconButton.styleFrom(
