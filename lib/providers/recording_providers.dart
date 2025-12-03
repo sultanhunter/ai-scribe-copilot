@@ -131,16 +131,27 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
     String sessionId, {
     int startingSequenceNumber = 0,
   }) async {
-    // Start audio recording
+    // Start continuous audio recording
     final audioService = ref.read(audioRecordingServiceProvider);
-    await audioService.startRecording(
-      sessionId,
+    await audioService.startRecording(sessionId);
+
+    // Get the recording file path
+    final recordingPath = audioService.recordingFilePath;
+    if (recordingPath == null) {
+      throw Exception('Failed to start recording - no file path');
+    }
+
+    // Start chunking service
+    final chunkingService = ref.read(audioChunkingServiceProvider);
+    await chunkingService.startChunking(
+      sessionId: sessionId,
+      recordingFilePath: recordingPath,
       startingSequenceNumber: startingSequenceNumber,
     );
 
-    // Listen to audio chunks and upload them
+    // Listen to chunks from chunking service and upload them
     final uploadService = ref.read(chunkUploadServiceProvider);
-    _chunkSubscription = audioService.chunkStream.listen(
+    _chunkSubscription = chunkingService.chunkStream.listen(
       (chunk) {
         _logger.i('Received chunk: ${chunk.sequenceNumber}');
         state = state.copyWith(totalChunks: state.totalChunks + 1);
@@ -166,13 +177,17 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
         'Status: ${progress.status}, Queue: ${progress.queueSize}',
       );
 
-      if (progress.status == UploadStatus.success) {
-        state = state.copyWith(uploadedChunks: state.uploadedChunks + 1);
-      } else if (progress.status == UploadStatus.failed) {
-        state = state.copyWith(failedChunks: state.failedChunks + 1);
-      }
+      // Get accurate counts from storage service
+      final storageService = ref.read(chunkStorageServiceProvider);
+      final stats = storageService.getStorageStats();
+      
+      // Calculate uploaded chunks (uploaded + verified)
+      final uploadedCount = (stats['uploaded'] as int) + (stats['verified'] as int);
+      final failedCount = stats['failed'] as int;
 
       state = state.copyWith(
+        uploadedChunks: uploadedCount,
+        failedChunks: failedCount,
         uploadQueueSize: progress.queueSize,
         lastUploadStatus: progress.status,
       );
@@ -220,6 +235,11 @@ class RecordingSessionNotifier extends Notifier<RecordingSessionState> {
       _durationUpdateTimer?.cancel();
       _durationUpdateTimer = null;
 
+      // Stop chunking service first (will process remaining audio)
+      final chunkingService = ref.read(audioChunkingServiceProvider);
+      await chunkingService.stopChunking();
+
+      // Then stop audio recording
       final audioService = ref.read(audioRecordingServiceProvider);
       await audioService.stopRecording();
 

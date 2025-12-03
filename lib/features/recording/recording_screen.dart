@@ -219,7 +219,9 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                 child: Column(
                   children: [
                     // See uploaded chunks button
-                    if (recordingState.uploadedChunks > 0)
+                    if (recordingState.session != null &&
+                        (recordingState.uploadedChunks > 0 ||
+                            recordingState.session!.uploadedChunks > 0))
                       Padding(
                         padding: const EdgeInsets.symmetric(
                           horizontal: 16,
@@ -260,13 +262,13 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
                           _startOrResumeRecording(context, ref, patient.id),
                       icon: Icon(
                         recordingState.session != null &&
-                                recordingState.session!.uploadedChunks > 0
+                                recordingState.session!.totalChunks > 0
                             ? Icons.play_arrow
                             : Icons.fiber_manual_record,
                       ),
                       label: Text(
                         recordingState.session != null &&
-                                recordingState.session!.uploadedChunks > 0
+                                recordingState.session!.totalChunks > 0
                             ? loc.translate('resumeRecording')
                             : loc.translate('startRecording'),
                       ),
@@ -339,9 +341,9 @@ class _RecordingScreenState extends ConsumerState<RecordingScreen> {
 
       final recordingState = ref.read(recordingSessionProvider);
 
-      // If we have an existing session with uploaded chunks, resume it
+      // If we have an existing session with any chunks, resume it
       if (recordingState.session != null &&
-          recordingState.session!.uploadedChunks > 0) {
+          recordingState.session!.totalChunks > 0) {
         await ref
             .read(recordingSessionProvider.notifier)
             .resumeRecordingSession();

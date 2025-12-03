@@ -1,6 +1,7 @@
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../services/api_service.dart';
 import '../services/audio_recording_service.dart';
+import '../services/audio_chunking_service.dart';
 import '../services/chunk_upload_service.dart';
 import '../services/chunk_storage_service.dart';
 import '../services/recording_notification_service.dart';
@@ -22,6 +23,13 @@ final apiServiceProvider = Provider<ApiService>((ref) {
 // Audio Recording Service Provider
 final audioRecordingServiceProvider = Provider<AudioRecordingService>((ref) {
   final service = AudioRecordingService();
+  ref.onDispose(() => service.dispose());
+  return service;
+});
+
+// Audio Chunking Service Provider
+final audioChunkingServiceProvider = Provider<AudioChunkingService>((ref) {
+  final service = AudioChunkingService();
   ref.onDispose(() => service.dispose());
   return service;
 });
