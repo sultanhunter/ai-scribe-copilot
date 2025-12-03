@@ -32,8 +32,6 @@ export interface Session {
   patient_id: string;
   user_id: string;
   start_time: string;
-  end_time?: string;
-  status: "active" | "completed" | "failed";
   total_chunks: number;
   uploaded_chunks: number;
   created_at: string;

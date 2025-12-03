@@ -34,7 +34,6 @@ router.post("/v1/upload-session", async (req: Request, res: Response) => {
       patient_id: patientId,
       user_id: userId,
       start_time: new Date().toISOString(),
-      status: "active",
       total_chunks: 0,
       uploaded_chunks: 0,
     });
@@ -310,20 +309,21 @@ router.post("/v1/complete-session", async (req: Request, res: Response) => {
     }
 
     // Update session status
-    const { error } = await supabase.client
-      .from("sessions")
-      .update({
-        status: "completed",
-        end_time: new Date().toISOString(),
-      })
-      .eq("session_id", sessionId);
+    // Update session status - REMOVED as status column is deleted
+    // const { error } = await supabase.client
+    //   .from("sessions")
+    //   .update({
+    //     status: "completed",
+    //     end_time: new Date().toISOString(),
+    //   })
+    //   .eq("session_id", sessionId);
 
-    if (error) {
-      return res.status(500).json({
-        error: "Failed to complete session",
-        message: error.message,
-      });
-    }
+    // if (error) {
+    //   return res.status(500).json({
+    //     error: "Failed to complete session",
+    //     message: error.message,
+    //   });
+    // }
 
     // Get final counts
     const { data: session } = await supabase.client
@@ -413,8 +413,6 @@ router.get("/v1/session/:sessionId", async (req: Request, res: Response) => {
       patientId: session.patient_id,
       userId: session.user_id,
       startTime: session.start_time,
-      endTime: session.end_time,
-      status: session.status,
       totalChunks: session.total_chunks,
       uploadedChunks: session.uploaded_chunks,
       pendingChunks: pendingCount || 0,
@@ -472,8 +470,6 @@ router.get(
         patientId: session.patient_id,
         userId: session.user_id,
         startTime: session.start_time,
-        endTime: session.end_time,
-        status: session.status,
         totalChunks: session.total_chunks,
         uploadedChunks: session.uploaded_chunks,
       }));

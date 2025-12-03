@@ -5,7 +5,7 @@ import '../../providers/patient_providers.dart';
 import 'patient_detail_screen.dart';
 import '../settings/settings_screen.dart';
 import 'widgets/patient_card.dart';
-import 'widgets/add_patient_dialog.dart';
+import 'widgets/add_patient_sheet.dart';
 
 class PatientsScreen extends ConsumerWidget {
   const PatientsScreen({super.key});
@@ -130,9 +130,14 @@ class PatientsScreen extends ConsumerWidget {
         ],
       ),
       floatingActionButton: FloatingActionButton.extended(
-        onPressed: () => showDialog(
+        onPressed: () => showModalBottomSheet(
           context: context,
-          builder: (context) => const AddPatientDialog(),
+          isScrollControlled: true,
+          useSafeArea: true,
+          shape: const RoundedRectangleBorder(
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          builder: (context) => const AddPatientSheet(),
         ),
         icon: const Icon(Icons.add),
         label: Text(loc.translate('addPatient')),

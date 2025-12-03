@@ -8,17 +8,32 @@ import '../../../providers/patient_providers.dart';
 import '../../../providers/service_providers.dart';
 import '../../../providers/app_providers.dart';
 
-class AddPatientDialog extends StatelessWidget {
-  const AddPatientDialog({super.key});
+class AddPatientSheet extends StatelessWidget {
+  const AddPatientSheet({super.key});
 
   @override
   Widget build(BuildContext context) {
-    return Dialog(
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
+    return Padding(
+      padding: EdgeInsets.only(
+        bottom: MediaQuery.of(context).viewInsets.bottom,
+      ),
       child: Container(
         padding: const EdgeInsets.all(24),
-        constraints: const BoxConstraints(maxWidth: 400),
-        child: const AddPatientForm(),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              margin: const EdgeInsets.only(bottom: 24),
+              decoration: BoxDecoration(
+                color: Theme.of(context).colorScheme.outline.withOpacity(0.3),
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const Flexible(child: AddPatientForm()),
+          ],
+        ),
       ),
     );
   }
